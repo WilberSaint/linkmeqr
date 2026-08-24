@@ -1,0 +1,115 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import {
+  Phone, Mail, MapPin, Globe, Menu as MenuIcon, ShoppingBag,
+  Image as ImageIcon, Video, Type, Link as LinkIcon,
+} from '@lucide/vue'
+import type { ProfileBlock, ProfileTheme } from '@/types'
+import { blockLabel } from '@/composables/blockLabels'
+import InstagramIcon from '@/components/icons/InstagramIcon.vue'
+import FacebookIcon from '@/components/icons/FacebookIcon.vue'
+import WhatsappIcon from '@/components/icons/WhatsappIcon.vue'
+import TiktokIcon from '@/components/icons/TiktokIcon.vue'
+import YoutubeIcon from '@/components/icons/YoutubeIcon.vue'
+
+const props = defineProps<{ block: ProfileBlock; theme: ProfileTheme | null }>()
+const emit = defineEmits<{ click: [] }>()
+
+// Brand-accurate SVG icon + its official background color, used when the
+// block doesn't override style (style_overrides.icon_color).
+const brandBlocks: Record<string, { icon: unknown; brandColor: string }> = {
+  instagram: { icon: InstagramIcon, brandColor: '#E1306C' },
+  facebook: { icon: FacebookIcon, brandColor: '#1877F2' },
+  whatsapp: { icon: WhatsappIcon, brandColor: '#25D366' },
+  tiktok: { icon: TiktokIcon, brandColor: '#010101' },
+  youtube: { icon: YoutubeIcon, brandColor: '#FF0000' },
+}
+
+const genericIconMap: Record<string, unknown> = {
+  phone: Phone,
+  email: Mail,
+  location: MapPin,
+  website: Globe,
+  menu: MenuIcon,
+  catalog: ShoppingBag,
+  image: ImageIcon,
+  video: Video,
+  text: Type,
+  link: LinkIcon,
+}
+
+const isBrandBlock = computed(() => props.block.block_type in brandBlocks)
+const icon = computed(() => brandBlocks[props.block.block_type]?.icon ?? genericIconMap[props.block.block_type] ?? LinkIcon)
+
+function styleOverride(): { icon_color?: string; use_brand_color?: boolean } {
+  return (props.block.style_overrides as { icon_color?: string; use_brand_color?: boolean } | null) ?? {}
+}
+
+// All buttons share the theme's button color by default, for a consistent
+// look across the profile — brand colors (Instagram pink, WhatsApp green...)
+// are opt-in per block via style_overrides.use_brand_color, not the default.
+const buttonColor = computed(() => {
+  const override = styleOverride()
+  if (override.icon_color) return override.icon_color
+  if (isBrandBlock.value && override.use_brand_color === true) {
+    return brandBlocks[props.block.block_type].brandColor
+  }
+  return props.theme?.secondary_color ?? '#6366f1'
+})
+
+const buttonStyleClass = computed(() => {
+  switch (props.theme?.button_style) {
+    case 'square':
+      return 'rounded-none'
+    case 'pill':
+      return 'rounded-full'
+    case 'outline':
+      return 'rounded-lg border-2 bg-transparent'
+    default:
+      return 'rounded-xl'
+  }
+})
+
+function onClick() {
+  emit('click')
+  const target = props.block.media_url || props.block.url
+  if (target) {
+    window.open(target, '_blank', 'noopener')
+  }
+}
+
+const displayLabel = computed(() => props.block.title || blockLabel(props.block.block_type))
+</script>
+
+<template>
+  <button
+    v-if="block.block_type === 'text'"
+    type="button"
+    class="w-full text-left px-4 py-3 text-sm"
+    :style="{ color: theme?.text_color }"
+  >
+    <p class="font-medium">{{ block.title }}</p>
+    <p v-if="block.description" class="text-sm opacity-80 mt-0.5">{{ block.description }}</p>
+  </button>
+
+  <button
+    v-else
+    type="button"
+    class="relative w-full flex items-center gap-3 px-4 py-3.5 shadow-sm transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-md hover:brightness-105 active:translate-y-0 active:scale-[0.98] active:shadow-sm active:brightness-95"
+    :class="buttonStyleClass"
+    :style="{
+      backgroundColor: theme?.button_style === 'outline' ? 'transparent' : buttonColor,
+      borderColor: buttonColor,
+      color: theme?.button_style === 'outline' ? buttonColor : theme?.button_text_color ?? '#ffffff',
+    }"
+    @click="onClick"
+  >
+    <span
+      class="flex items-center justify-center w-9 h-9 rounded-full shrink-0"
+      :style="{ backgroundColor: theme?.button_style === 'outline' ? 'transparent' : 'rgba(255,255,255,0.2)' }"
+    >
+      <component :is="icon" :size="22" color="currentColor" />
+    </span>
+    <span class="text-sm font-medium flex-1 text-center pr-9">{{ displayLabel }}</span>
+  </button>
+</template>

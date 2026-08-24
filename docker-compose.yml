@@ -1,0 +1,46 @@
+# Development stack: only infrastructure (MySQL + phpMyAdmin).
+# Backend (Go) and frontend (Vite) are run manually in their own terminals —
+# see README.md "Desarrollo local" for the exact commands.
+#
+# For the full containerized stack (backend + frontend + nginx included),
+# used for the actual Linux/DigitalOcean deployment, see docker-compose.prod.yml.
+services:
+  mysql:
+    image: mysql:8.4
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - linkmeqr
+
+  phpmyadmin:
+    image: phpmyadmin:5
+    ports:
+      - "8081:80"
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - linkmeqr
+
+networks:
+  linkmeqr:
+    driver: bridge
+
+volumes:
+  db_data:
+  media_data:

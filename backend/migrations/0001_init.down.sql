@@ -1,0 +1,15 @@
+DROP TABLE IF EXISTS audit_logs;
+DROP TABLE IF EXISTS analytics_events;
+DROP TABLE IF EXISTS qr_codes;
+DROP TABLE IF EXISTS license_activations;
+DROP TABLE IF EXISTS activation_codes;
+DROP TABLE IF EXISTS licenses;
+DROP TABLE IF EXISTS profile_blocks;
+DROP TABLE IF EXISTS profile_themes;
+ALTER TABLE profiles DROP FOREIGN KEY fk_profiles_logo_media;
+ALTER TABLE profiles DROP FOREIGN KEY fk_profiles_cover_media;
+DROP TABLE IF EXISTS media;
+DROP TABLE IF EXISTS profiles;
+DROP TABLE IF EXISTS templates;
+DROP TABLE IF EXISTS refresh_tokens;
+DROP TABLE IF EXISTS users;
