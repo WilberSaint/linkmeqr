@@ -10,6 +10,7 @@ export function updateMyProfile(payload: {
   description?: string | null
   template_id?: string | null
   logo_media_id?: string | null
+  cover_media_id?: string | null
   is_published: boolean
 }) {
   return apiClient.patch<Profile>('/me/profile', payload).then((r) => r.data)

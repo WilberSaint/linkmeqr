@@ -97,6 +97,14 @@ export interface ProfileTheme {
   background_value: string
   background_media_id?: string | null
   background_url?: string | null
+  /**
+   * Only meaningful when background_type is 'image': 'cover' fills edge to
+   * edge and crops, 'contain' shows the whole image with background_value
+   * as letterbox fill (right for a framed/poster-style illustration with
+   * its own border), 'repeat' tiles it at natural size (right for a
+   * genuinely seamless pattern).
+   */
+  background_fit: 'cover' | 'contain' | 'repeat'
   primary_color: string
   secondary_color: string
   text_color: string

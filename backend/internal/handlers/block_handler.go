@@ -138,7 +138,7 @@ func (h *BlockHandler) Create(w http.ResponseWriter, r *http.Request) {
 		BlockType:      req.BlockType,
 		Title:          req.Title,
 		Description:    req.Description,
-		URL:            req.URL,
+		URL:            services.NormalizeBlockURL(req.BlockType, req.URL),
 		Icon:           req.Icon,
 		MediaID:        req.MediaID,
 		StyleOverrides: rawToStringPtr(req.StyleOverrides),
@@ -195,7 +195,7 @@ func (h *BlockHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	block.Title = req.Title
 	block.Description = req.Description
-	block.URL = req.URL
+	block.URL = services.NormalizeBlockURL(block.BlockType, req.URL)
 	block.Icon = req.Icon
 	block.MediaID = req.MediaID
 	block.StyleOverrides = rawToStringPtr(req.StyleOverrides)

@@ -20,6 +20,11 @@ type Config struct {
 	JWTAccessTTL     time.Duration
 	FrontendOrigins  []string
 	PublicBaseURL    string
+	// FrontendShellURL is where the built SPA's index.html is served from,
+	// so /p/:slug can be returned with the business's own Open Graph tags
+	// injected into it (see PublicHandler.ProfileShell). In production
+	// that's the frontend container on the internal network.
+	FrontendShellURL string
 	MediaStoragePath string
 
 	GoogleWalletIssuerID            string
@@ -42,6 +47,7 @@ func Load() (*Config, error) {
 		JWTRefreshTTL:    30 * 24 * time.Hour,
 		FrontendOrigins:  splitCSV(getEnv("FRONTEND_ORIGIN", "http://localhost:5173")),
 		PublicBaseURL:    getEnv("PUBLIC_BASE_URL", "http://localhost:5173"),
+		FrontendShellURL: getEnv("FRONTEND_SHELL_URL", "http://frontend/"),
 		MediaStoragePath: getEnv("MEDIA_STORAGE_PATH", "./media"),
 
 		// Google Wallet: all optional — the loyalty "Add to Google Wallet"

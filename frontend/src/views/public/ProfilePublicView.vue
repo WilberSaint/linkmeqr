@@ -9,6 +9,8 @@ import ProfileInactiveView from './ProfileInactiveView.vue'
 const route = useRoute()
 const slug = route.params.slug as string
 
+const publicUrl = `${window.location.origin}/p/${slug}`
+
 const loading = ref(true)
 const inactive = ref(false)
 const profile = ref<Profile | null>(null)
@@ -46,6 +48,12 @@ onMounted(load)
   </div>
   <ProfileInactiveView v-else-if="inactive" />
   <div v-else class="min-h-screen h-screen">
-    <ProfilePreview :profile="profile" :theme="theme" :blocks="blocks" @block-click="onBlockClick" />
+    <ProfilePreview
+      :profile="profile"
+      :theme="theme"
+      :blocks="blocks"
+      :public-url="publicUrl"
+      @block-click="onBlockClick"
+    />
   </div>
 </template>

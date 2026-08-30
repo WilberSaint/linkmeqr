@@ -44,6 +44,10 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      # Where the backend reads the built SPA shell from, to inject each
+      # profile's Open Graph tags into it — the frontend container's own
+      # nginx, over the internal network.
+      FRONTEND_SHELL_URL: http://frontend/
       MEDIA_STORAGE_PATH: /data/media
       SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL}
       SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD}

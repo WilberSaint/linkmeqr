@@ -81,12 +81,27 @@ const buttonStyleClass = computed(() => {
   }
 })
 
+/**
+ * The block's destination, repaired if needed.
+ *
+ * The backend now normalizes URLs on save, but blocks stored before that —
+ * a bare "www.cafemani.com" — would still resolve as a path relative to
+ * /p/:slug and strand the visitor inside the site. Fixing it here too means
+ * existing data behaves correctly without anyone having to re-save it.
+ */
+const resolvedHref = computed(() => {
+  const raw = (props.block.media_url || props.block.url || '').trim()
+  if (!raw) return ''
+  if (/^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith('//') || raw.startsWith('/')) return raw
+  return raw.includes('.') ? `https://${raw}` : raw
+})
+
+/** tel:/mailto: must stay in place; only web destinations open a new tab. */
+const isExternal = computed(() => /^(https?:)?\/\//i.test(resolvedHref.value))
+
 function onClick() {
+  // Navigation is the anchor's job now — this only records the click.
   emit('click')
-  const target = props.block.media_url || props.block.url
-  if (target) {
-    window.open(target, '_blank', 'noopener')
-  }
 }
 
 const displayLabel = computed(() => props.block.title || blockLabel(props.block.block_type))
@@ -118,9 +133,17 @@ const displayLabel = computed(() => props.block.title || blockLabel(props.block.
     <MapBlock v-else-if="block.block_type === 'map'" :content="block.content" :theme="theme" />
   </div>
 
-  <button
+  <!-- A real <a> whenever there's somewhere to go: long-press to copy or
+       open in a new tab, "link" announced to screen readers with its
+       destination, no popup blocker in the way, and a crawlable href. Falls
+       back to <button> only when the block genuinely has no target. -->
+  <component
+    :is="resolvedHref ? 'a' : 'button'"
     v-else
-    type="button"
+    :href="resolvedHref || undefined"
+    :target="isExternal ? '_blank' : undefined"
+    :rel="isExternal ? 'noopener noreferrer' : undefined"
+    :type="resolvedHref ? undefined : 'button'"
     class="relative shadow-sm transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-md hover:brightness-105 active:translate-y-0 active:scale-[0.98] active:shadow-sm active:brightness-95"
     :class="[
       buttonStyleClass,
@@ -141,5 +164,5 @@ const displayLabel = computed(() => props.block.title || blockLabel(props.block.
       <component :is="icon" :size="card ? 20 : 22" color="currentColor" />
     </span>
     <span class="text-sm font-medium" :class="card ? 'line-clamp-2' : 'flex-1 text-center pr-9'">{{ displayLabel }}</span>
-  </button>
+  </component>
 </template>

@@ -3,7 +3,12 @@ import draggable from 'vuedraggable'
 import type { BlockType, ProfileBlock } from '@/types'
 import BlockListItem from './BlockListItem.vue'
 
-const props = defineProps<{ blocks: ProfileBlock[]; uploadingMenuFileFor?: string | null }>()
+const props = defineProps<{
+  blocks: ProfileBlock[]
+  uploadingMenuFileFor?: string | null
+  /** Clicks per block id, so the list can show what each one is actually doing. */
+  clicksByBlock?: Record<string, number>
+}>()
 const emit = defineEmits<{
   reorder: [blocks: ProfileBlock[]]
   update: [id: string, payload: Partial<ProfileBlock>, debounced?: boolean]
@@ -93,6 +98,7 @@ function onDragEnd(newList: ProfileBlock[]) {
       <template #item="{ element }">
         <BlockListItem
           :block="element"
+          :clicks="props.clicksByBlock?.[element.id]"
           :menu-file-uploading="uploadingMenuFileFor === element.id"
           @update="(payload, debounced) => emit('update', element.id, payload, debounced)"
           @remove="emit('remove', element.id)"

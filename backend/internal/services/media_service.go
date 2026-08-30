@@ -50,10 +50,6 @@ func (s *MediaService) Upload(ctx context.Context, ownerUserID string, fileName,
 		return nil, fmt.Errorf("prepare storage dir: %w", err)
 	}
 
-	id := uuid.NewString()
-	storedName := id + ext
-	fullPath := filepath.Join(s.storagePath, storedName)
-
 	limited := io.LimitReader(content, maxUploadSize+1)
 	buf, err := io.ReadAll(limited)
 	if err != nil {
@@ -62,6 +58,18 @@ func (s *MediaService) Upload(ctx context.Context, ownerUserID string, fileName,
 	if int64(len(buf)) > maxUploadSize {
 		return nil, fmt.Errorf("file exceeds maximum size of %d bytes", maxUploadSize)
 	}
+
+	// Shrink oversized photos before they ever reach disk, so what visitors
+	// download is sized for a screen rather than for a camera sensor. A file
+	// that's already reasonable, or that can't be safely re-encoded, is
+	// stored byte-for-byte as uploaded.
+	if scaled, scaledMime, scaledExt, ok := downscaleImage(buf, mimeType); ok {
+		buf, mimeType, ext = scaled, scaledMime, scaledExt
+	}
+
+	id := uuid.NewString()
+	storedName := id + ext
+	fullPath := filepath.Join(s.storagePath, storedName)
 
 	if err := os.WriteFile(fullPath, buf, 0o644); err != nil {
 		return nil, fmt.Errorf("write file: %w", err)

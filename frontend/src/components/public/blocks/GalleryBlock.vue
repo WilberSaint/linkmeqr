@@ -27,7 +27,15 @@ const images = computed<GalleryImage[]>(() => {
       class="aspect-square rounded-lg overflow-hidden bg-black/5"
       :title="img.caption"
     >
-      <img :src="img.file_path" :alt="img.caption || ''" class="w-full h-full object-cover" />
+      <!-- A gallery is usually below the fold and can hold a dozen photos;
+           loading them all up front is most of what a first visit waits on. -->
+      <img
+        :src="img.file_path"
+        :alt="img.caption || ''"
+        loading="lazy"
+        decoding="async"
+        class="w-full h-full object-cover"
+      />
     </a>
   </div>
   <p v-else class="text-xs text-center opacity-60" :style="{ color: theme?.text_color }">

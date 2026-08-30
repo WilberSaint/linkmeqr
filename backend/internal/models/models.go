@@ -124,6 +124,10 @@ type ProfileTheme struct {
 	BackgroundType      string    `db:"background_type" json:"background_type"`
 	BackgroundValue     string    `db:"background_value" json:"background_value"`
 	BackgroundMediaID   *string   `db:"background_media_id" json:"background_media_id"`
+	// BackgroundFit only matters when BackgroundType is "image": "cover"
+	// fills edge to edge and crops, "contain" shows the whole image with
+	// BackgroundValue as letterbox fill, "repeat" tiles it at natural size.
+	BackgroundFit       string    `db:"background_fit" json:"background_fit"`
 	PrimaryColor        string    `db:"primary_color" json:"primary_color"`
 	SecondaryColor      string    `db:"secondary_color" json:"secondary_color"`
 	TextColor           string    `db:"text_color" json:"text_color"`

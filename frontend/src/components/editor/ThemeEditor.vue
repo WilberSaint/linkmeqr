@@ -14,13 +14,14 @@ const emit = defineEmits<{ update: [payload: Partial<ProfileTheme>]; uploadBackg
 
 type BackgroundTab = 'color' | 'gradient' | 'pattern' | 'image'
 
-// 'pattern' and 'image' are temporarily hidden from the tab bar while they
-// get polished — if a profile already has one saved (from earlier testing),
-// treat it like 'gradient'/'color' for tab purposes so the UI never lands on
-// a tab with no button to select it; the underlying value is untouched.
+// 'pattern' stays hidden from the tab bar while it gets polished — a
+// profile that already has one saved (from earlier testing) still falls
+// back to 'color' for tab purposes so the UI never lands on a tab with no
+// button to select it; the underlying value is untouched.
 const backgroundTab = computed<BackgroundTab>({
   get() {
     if (props.theme.background_type === 'gradient' || isSimpleLinearGradient(props.theme.background_value)) return 'gradient'
+    if (props.theme.background_type === 'image') return 'image'
     return 'color'
   },
   set(tab) {
@@ -31,7 +32,14 @@ const backgroundTab = computed<BackgroundTab>({
     } else if (tab === 'pattern') {
       emit('update', { background_type: 'pattern', background_value: buildPatternBackground(PATTERNS[0].id, '#ffffff', '#111827', 'horizontal') })
     } else {
-      emit('update', { background_type: 'image', background_value: '' })
+      // background_value only matters for color/gradient/pattern types —
+      // ProfilePreview ignores it entirely once background_type is 'image',
+      // reading background_media_id instead. But the backend still requires
+      // it non-empty (it's a shared column, read as a plain CSS value by
+      // things like the template picker's own thumbnail swatches), so an
+      // empty string here got the save rejected outright with no visible
+      // error — this is why the tab used to just silently do nothing.
+      emit('update', { background_type: 'image', background_value: props.theme.background_value || '#f3f4f6' })
     }
   },
 })
@@ -41,6 +49,12 @@ function onBackgroundFileSelected(e: Event) {
   ;(e.target as HTMLInputElement).value = ''
   if (file) emit('uploadBackground', file)
 }
+
+const backgroundFits: { value: ProfileTheme['background_fit']; label: string; hint: string }[] = [
+  { value: 'cover', label: 'Rellenar', hint: 'Cubre toda la pantalla; puede recortar los bordes de la imagen.' },
+  { value: 'contain', label: 'Completa', hint: 'Se ve entera, sin recortes; el color de fondo rellena lo que sobre.' },
+  { value: 'repeat', label: 'Mosaico', hint: 'Repite la imagen en su tamaño real — para patrones que ya se acoplan solos.' },
+]
 
 const buttonStyles: { value: ProfileTheme['button_style']; label: string }[] = [
   { value: 'rounded', label: 'Redondeado' },
@@ -103,6 +117,7 @@ for (const f of AVAILABLE_FONTS) ensureGoogleFontLoaded(f)
           v-for="t in [
             { id: 'color', label: 'Sólido' },
             { id: 'gradient', label: 'Degradado' },
+            { id: 'image', label: 'Imagen' },
           ]"
           :key="t.id"
           type="button"
@@ -172,7 +187,23 @@ for (const f of AVAILABLE_FONTS) ensureGoogleFontLoaded(f)
             @change="onBackgroundFileSelected"
           />
         </label>
-        <p class="text-[11px] text-gray-400 mt-1">Se ajustará para cubrir todo el fondo de tu página.</p>
+        <p class="text-[11px] text-gray-400 mt-1 mb-3">Elige cómo se ajusta al tamaño de pantalla:</p>
+
+        <div class="flex gap-1 mb-2 bg-gray-100 rounded-lg p-1">
+          <button
+            v-for="f in backgroundFits"
+            :key="f.value"
+            type="button"
+            class="flex-1 rounded-md py-1.5 text-[11px] font-medium transition"
+            :class="theme.background_fit === f.value ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'"
+            @click="emit('update', { background_fit: f.value })"
+          >
+            {{ f.label }}
+          </button>
+        </div>
+        <p class="text-[11px] text-gray-400">
+          {{ backgroundFits.find((f) => f.value === theme.background_fit)?.hint }}
+        </p>
       </div>
     </section>
 

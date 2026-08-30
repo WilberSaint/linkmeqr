@@ -56,6 +56,7 @@ type updateProfileRequest struct {
 	Description  *string `json:"description"`
 	TemplateID   *string `json:"template_id"`
 	LogoMediaID  *string `json:"logo_media_id"`
+	CoverMediaID *string `json:"cover_media_id"`
 	IsPublished  bool    `json:"is_published"`
 }
 
@@ -78,6 +79,7 @@ func (h *ProfileHandler) UpdateMine(w http.ResponseWriter, r *http.Request) {
 	profile.Description = req.Description
 	profile.TemplateID = req.TemplateID
 	profile.LogoMediaID = req.LogoMediaID
+	profile.CoverMediaID = req.CoverMediaID
 	profile.IsPublished = req.IsPublished
 
 	if err := h.profiles.Update(r.Context(), profile); err != nil {
@@ -123,6 +125,10 @@ type updateThemeRequest struct {
 	BackgroundType      string  `json:"background_type" validate:"required,oneof=color gradient pattern image"`
 	BackgroundValue     string  `json:"background_value" validate:"required"`
 	BackgroundMediaID   *string `json:"background_media_id"`
+	// omitempty rather than required: older saved themes and any client that
+	// hasn't caught up yet just omit it, and default to "cover" below rather
+	// than have the whole save rejected over one cosmetic field.
+	BackgroundFit       string  `json:"background_fit" validate:"omitempty,oneof=cover contain repeat"`
 	PrimaryColor        string  `json:"primary_color" validate:"required"`
 	SecondaryColor      string  `json:"secondary_color" validate:"required"`
 	TextColor           string  `json:"text_color" validate:"required"`
@@ -160,6 +166,10 @@ func (h *ProfileHandler) UpdateMyTheme(w http.ResponseWriter, r *http.Request) {
 	theme.BackgroundType = req.BackgroundType
 	theme.BackgroundValue = req.BackgroundValue
 	theme.BackgroundMediaID = req.BackgroundMediaID
+	theme.BackgroundFit = req.BackgroundFit
+	if theme.BackgroundFit == "" {
+		theme.BackgroundFit = "cover"
+	}
 	theme.PrimaryColor = req.PrimaryColor
 	theme.SecondaryColor = req.SecondaryColor
 	theme.TextColor = req.TextColor

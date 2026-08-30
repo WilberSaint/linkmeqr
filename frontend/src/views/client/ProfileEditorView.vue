@@ -5,6 +5,7 @@ import { ArrowLeft, Check, Copy, ExternalLink, Loader2 } from '@lucide/vue'
 import { useEditorStore } from '@/stores/editor'
 import * as templatesApi from '@/api/templates'
 import * as profileApi from '@/api/profile'
+import * as statsApi from '@/api/stats'
 import type { BlockType, ProfileBlock, ProfileTheme, Template } from '@/types'
 import { blockLabel } from '@/composables/blockLabels'
 import ProfilePreview from '@/components/public/ProfilePreview.vue'
@@ -30,7 +31,11 @@ const previewProfile = computed(() => ({
   business_name: profileForm.value.business_name,
   description: profileForm.value.description,
   logo_url: editor.profile?.logo_url,
+  cover_url: editor.profile?.cover_url,
 }))
+
+/** Clicks per block id, for the counts shown on each row of the block list. */
+const clicksByBlock = ref<Record<string, number>>({})
 
 async function load() {
   await editor.loadAll()
@@ -41,17 +46,34 @@ async function load() {
       description: editor.profile.description ?? '',
     }
   }
+  // Supporting detail, not something the editor should fail to open over.
+  try {
+    const summary = await statsApi.myStatsSummary('30d')
+    clicksByBlock.value = Object.fromEntries(summary.block_clicks.map((row) => [row.block_id, row.count]))
+  } catch {
+    clicksByBlock.value = {}
+  }
 }
 
 function currentProfilePayload(
-  overrides: Partial<{ template_id: string | null; logo_media_id: string | null; is_published: boolean }> = {},
+  overrides: Partial<{
+    template_id: string | null
+    logo_media_id: string | null
+    cover_media_id: string | null
+    is_published: boolean
+  }> = {},
 ) {
   if (!editor.profile) return null
+  // Every field the endpoint accepts has to be resent on every save: it
+  // replaces the whole profile rather than patching individual keys, so
+  // omitting one here silently clears it (this is exactly how the cover
+  // would disappear on the next unrelated edit).
   return {
     business_name: profileForm.value.business_name,
     description: profileForm.value.description,
     template_id: editor.profile.template_id,
     logo_media_id: editor.profile.logo_media_id,
+    cover_media_id: editor.profile.cover_media_id,
     is_published: editor.profile.is_published,
     ...overrides,
   }
@@ -219,6 +241,37 @@ async function onCropped(blob: Blob, shape: ProfileTheme['logo_shape']) {
   }
 }
 
+// --- portada -----------------------------------------------------------
+//
+// Unlike the logo, the cover goes up as-is with no crop step: it's rendered
+// as a wide banner strip that crops itself to whatever the screen is, so a
+// fixed-ratio crop dialog beforehand would just throw away pixels the page
+// might actually want.
+const coverUploading = ref(false)
+
+async function onCoverFileSelected(e: Event) {
+  const input = e.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  coverUploading.value = true
+  try {
+    const media = await profileApi.uploadMedia(file)
+    const payload = currentProfilePayload({ cover_media_id: media.id })
+    if (payload) await editor.saveProfile(payload)
+    await editor.loadAll()
+  } finally {
+    coverUploading.value = false
+  }
+}
+
+async function onRemoveCover() {
+  const payload = currentProfilePayload({ cover_media_id: null })
+  if (!payload) return
+  await editor.saveProfile(payload)
+  await editor.loadAll()
+}
+
 async function onUploadBackground(file: File) {
   if (!editor.theme) return
   backgroundUploading.value = true
@@ -381,6 +434,49 @@ onMounted(load)
               </div>
             </div>
             <div>
+              <div class="flex items-center justify-between mb-1.5">
+                <label class="block text-xs font-medium text-gray-600">Portada</label>
+                <button
+                  v-if="editor.profile?.cover_url"
+                  type="button"
+                  class="text-[11px] text-gray-400 hover:text-red-600"
+                  @click="onRemoveCover"
+                >
+                  Quitar
+                </button>
+              </div>
+              <label class="relative group cursor-pointer block">
+                <img
+                  v-if="editor.profile?.cover_url"
+                  :src="editor.profile.cover_url"
+                  alt="Portada"
+                  class="w-full h-20 rounded-lg object-cover border border-gray-200"
+                />
+                <div
+                  v-else
+                  class="w-full h-20 rounded-lg border-2 border-dashed border-gray-300 flex items-center justify-center text-[11px] text-gray-400"
+                >
+                  {{ coverUploading ? 'Subiendo…' : 'Subir portada' }}
+                </div>
+                <div
+                  v-if="editor.profile?.cover_url"
+                  class="absolute inset-0 rounded-lg bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center"
+                >
+                  <span class="text-white text-[10px] font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+                    {{ coverUploading ? '…' : 'Cambiar' }}
+                  </span>
+                </div>
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif,image/webp"
+                  class="hidden"
+                  :disabled="coverUploading"
+                  @change="onCoverFileSelected"
+                />
+              </label>
+              <p class="text-[11px] text-gray-400 mt-1">Se muestra como banner arriba del logo. Recomendado: 1200 × 400 px.</p>
+            </div>
+            <div>
               <label class="block text-xs font-medium text-gray-600 mb-1">Nombre del negocio</label>
               <input v-model="profileForm.business_name" class="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent" />
             </div>
@@ -392,6 +488,7 @@ onMounted(load)
 
           <BlockList
             :blocks="editor.blocks"
+            :clicks-by-block="clicksByBlock"
             :uploading-menu-file-for="uploadingMenuFileFor"
             @add="onAddBlock"
             @update="onUpdateBlock"
@@ -474,7 +571,12 @@ onMounted(load)
       :class="mobileView === 'preview' ? 'flex' : 'hidden'"
     >
       <div class="w-full max-w-[360px] h-full max-h-[640px] md:h-[720px] rounded-[2rem] border-8 border-gray-900 overflow-hidden shadow-xl bg-white">
-        <ProfilePreview :profile="previewProfile" :theme="editor.theme" :blocks="editor.blocks" />
+        <ProfilePreview
+          :profile="previewProfile"
+          :theme="editor.theme"
+          :blocks="editor.blocks"
+          :public-url="publicUrl"
+        />
       </div>
     </div>
     </div>

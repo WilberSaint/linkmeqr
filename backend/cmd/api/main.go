@@ -88,6 +88,7 @@ func main() {
 	blockHandler := handlers.NewBlockHandler(blockSvc, profileSvc, mediaRepo)
 	mediaHandler := handlers.NewMediaHandler(mediaSvc)
 	publicHandler := handlers.NewPublicHandler(profileSvc, blockSvc, licenseRepo, analyticsSvc, mediaRepo)
+	shellHandler := handlers.NewShellHandler(profileSvc, licenseRepo, mediaRepo, cfg.FrontendShellURL, cfg.PublicBaseURL)
 	statsHandler := handlers.NewStatsHandler(profileSvc, analyticsSvc)
 	qrHandler := handlers.NewQRHandler(qrSvc, profileSvc, mediaRepo)
 	adminProfileHandler := handlers.NewAdminProfileHandler(profileSvc, auditSvc)
@@ -118,13 +119,28 @@ func main() {
 	})
 
 	// Serve uploaded media (logos, backgrounds, block images) directly.
-	r.Handle("/media/*", http.StripPrefix("/media/", http.FileServer(http.Dir(cfg.MediaStoragePath))))
+	//
+	// Every stored file is named by a UUID and never rewritten — replacing an
+	// image uploads a new one under a new name — so the bytes at a given path
+	// are immutable and can be cached hard. Without this every visit re-fetched
+	// the logo, cover and background in full, which on mobile data is most of
+	// what a QR scan waits for.
+	mediaFiles := http.StripPrefix("/media/", http.FileServer(http.Dir(cfg.MediaStoragePath)))
+	r.Handle("/media/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		mediaFiles.ServeHTTP(w, r)
+	}))
 
 	// Short, trackable links every exported print card's QR encodes — see
 	// PrintCardHandler.Scan. Deliberately outside /api and unauthenticated:
 	// this is hit directly by a phone camera scanning a physical card.
 	r.Get("/q/{code}", printCardHandler.Scan)
 	r.Get("/q/{code}/{slot}", printCardHandler.Scan)
+
+	// The public profile page. Served here rather than straight off the
+	// static frontend so each business's own Open Graph tags land in the
+	// HTML — see ShellHandler. Visitors still get the identical SPA shell.
+	r.Get("/p/{slug}", shellHandler.ProfileShell)
 
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {

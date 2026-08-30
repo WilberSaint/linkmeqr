@@ -7,11 +7,18 @@ import GoogleIcon from '@/components/icons/GoogleIcon.vue'
 const props = defineProps<{ block: ProfileBlock; theme: ProfileTheme | null }>()
 const emit = defineEmits<{ click: [] }>()
 
+// Same reasoning as BlockRenderer: a real link, repaired if it was stored
+// without a scheme, so it can be long-pressed, opened in a tab and read
+// correctly by a screen reader.
+const href = computed(() => {
+  const raw = (props.block.url ?? '').trim()
+  if (!raw) return ''
+  if (/^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith('//') || raw.startsWith('/')) return raw
+  return raw.includes('.') ? `https://${raw}` : raw
+})
+
 function onClick() {
   emit('click')
-  if (props.block.url) {
-    window.open(props.block.url, '_blank', 'noopener')
-  }
 }
 
 const buttonShapeClass = computed(() => {
@@ -38,9 +45,13 @@ const buttonShapeClass = computed(() => {
     <div class="flex gap-0.5">
       <Star v-for="n in 5" :key="n" :size="16" fill="#FBBC05" color="#FBBC05" />
     </div>
-    <button
-      type="button"
-      class="mt-1 px-4 py-2 text-sm font-medium shadow-sm transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98]"
+    <component
+      :is="href ? 'a' : 'button'"
+      :href="href || undefined"
+      :target="href ? '_blank' : undefined"
+      :rel="href ? 'noopener noreferrer' : undefined"
+      :type="href ? undefined : 'button'"
+      class="mt-1 inline-block px-4 py-2 text-sm font-medium shadow-sm transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98]"
       :class="buttonShapeClass"
       :style="{
         backgroundColor: theme?.button_style === 'outline' ? 'transparent' : theme?.secondary_color ?? '#6366f1',
@@ -50,6 +61,6 @@ const buttonShapeClass = computed(() => {
       @click="onClick"
     >
       Escribir reseña
-    </button>
+    </component>
   </div>
 </template>

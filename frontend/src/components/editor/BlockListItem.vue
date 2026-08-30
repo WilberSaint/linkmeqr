@@ -9,7 +9,42 @@ import HoursFields from './blocks/HoursFields.vue'
 import TestimonialsFields from './blocks/TestimonialsFields.vue'
 import MapFields from './blocks/MapFields.vue'
 
-const props = defineProps<{ block: ProfileBlock; menuFileUploading?: boolean }>()
+const props = defineProps<{
+  block: ProfileBlock
+  menuFileUploading?: boolean
+  /**
+   * Clicks this block has received. Shown right on the row because this is
+   * where you decide what to reorder, hide or delete — the number belonged
+   * next to that decision, not only on a separate stats screen.
+   */
+  clicks?: number
+}>()
+/**
+ * Warns about a URL that will be silently repaired on save, or that doesn't
+ * look like a link at all.
+ *
+ * Typing a bare "www.cafemani.com" used to save cleanly and then send every
+ * visitor to a dead page inside the site — nothing anywhere said otherwise.
+ * The backend now fixes it, but saying so here is what turns an invisible
+ * repair into something the business understands and can correct.
+ */
+const urlHint = computed(() => {
+  const raw = (props.block.url ?? '').trim()
+  // Contact blocks legitimately hold a bare number or address.
+  if (['phone', 'email', 'whatsapp', 'text'].includes(props.block.block_type)) return ''
+  if (!raw) {
+    // An empty link block still renders on the public page, as a button that
+    // does nothing when tapped — silent from the business's side, confusing
+    // from the visitor's.
+    return props.block.media_id ? '' : 'Sin enlace: este bloque no llevará a ningún lado.'
+  }
+  if (/^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith('//')) return ''
+  if (raw.includes('.') && !raw.includes(' ')) {
+    return `Se guardará como https://${raw}`
+  }
+  return 'Esto no parece un enlace. Debe empezar con https://'
+})
+
 const emit = defineEmits<{
   /**
    * debounced tells the parent this came from a keystroke, so it can show the
@@ -85,7 +120,10 @@ function setCustomColor(color: string) {
       <GripVertical :size="16" class="text-gray-300 drag-handle cursor-grab shrink-0" />
       <div class="flex-1 min-w-0">
         <p class="text-sm font-medium text-gray-900 truncate">{{ block.title || blockLabel(block.block_type) }}</p>
-        <p class="text-xs text-gray-400">{{ blockLabel(block.block_type) }}</p>
+        <p class="text-xs text-gray-400">
+          {{ blockLabel(block.block_type) }}
+          <span v-if="props.clicks" class="text-gray-500">· {{ props.clicks }} {{ props.clicks === 1 ? 'clic' : 'clics' }}</span>
+        </p>
       </div>
       <button
         class="p-1.5 text-gray-400 hover:text-gray-700"
@@ -170,6 +208,7 @@ function setCustomColor(color: string) {
           class="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
           @input="onType({ url: ($event.target as HTMLInputElement).value })"
         />
+        <p v-if="urlHint" class="text-[11px] text-amber-600 mt-1">{{ urlHint }}</p>
         <p v-if="block.block_type === 'google_review'" class="text-[11px] text-gray-400 mt-1">
           Búscalo en Google Maps → tu negocio → "Pedir reseñas" te da este link, o genera uno con la
           <a href="https://developers.google.com/maps/documentation/places/web-service/place-id" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">herramienta de Place ID de Google</a>.
