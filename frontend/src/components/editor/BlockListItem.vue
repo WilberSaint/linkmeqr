@@ -47,6 +47,32 @@ const urlHint = computed(() => {
   return 'Esto no parece un enlace. Debe empezar con https://'
 })
 
+/**
+ * Gallery, hours and testimonials render nothing at all on the public page
+ * when their content array is empty — same silent-gap problem as a link
+ * with no URL, just one step removed, since these blocks are added and
+ * filled in separately rather than in one step.
+ */
+const emptyContentHint = computed(() => {
+  const content = props.block.content
+  switch (props.block.block_type) {
+    case 'gallery':
+      return Array.isArray(content?.images) && content.images.length > 0
+        ? ''
+        : 'Sin fotos todavía: esta galería no se mostrará en tu perfil.'
+    case 'testimonials':
+      return Array.isArray(content?.items) && content.items.length > 0
+        ? ''
+        : 'Sin testimonios todavía: este bloque no se mostrará en tu perfil.'
+    case 'hours':
+      return Array.isArray(content?.schedule) && content.schedule.length > 0
+        ? ''
+        : 'Sin horario todavía: este bloque no se mostrará en tu perfil.'
+    default:
+      return ''
+  }
+})
+
 const emit = defineEmits<{
   /**
    * debounced tells the parent this came from a keystroke, so it can show the
@@ -204,21 +230,18 @@ function setCustomColor(color: string) {
           @input="onType({ url: ($event.target as HTMLInputElement).value })"
         />
       </div>
-      <GalleryFields
-        v-else-if="block.block_type === 'gallery'"
-        :content="block.content"
-        @update="(content) => emit('update', { content })"
-      />
-      <HoursFields
-        v-else-if="block.block_type === 'hours'"
-        :content="block.content"
-        @update="(content) => emit('update', { content })"
-      />
-      <TestimonialsFields
-        v-else-if="block.block_type === 'testimonials'"
-        :content="block.content"
-        @update="(content) => emit('update', { content })"
-      />
+      <div v-else-if="block.block_type === 'gallery'">
+        <GalleryFields :content="block.content" @update="(content) => emit('update', { content })" />
+        <p v-if="emptyContentHint" class="text-[11px] text-amber-600 mt-1.5">{{ emptyContentHint }}</p>
+      </div>
+      <div v-else-if="block.block_type === 'hours'">
+        <HoursFields :content="block.content" @update="(content) => emit('update', { content })" />
+        <p v-if="emptyContentHint" class="text-[11px] text-amber-600 mt-1.5">{{ emptyContentHint }}</p>
+      </div>
+      <div v-else-if="block.block_type === 'testimonials'">
+        <TestimonialsFields :content="block.content" @update="(content) => emit('update', { content })" />
+        <p v-if="emptyContentHint" class="text-[11px] text-amber-600 mt-1.5">{{ emptyContentHint }}</p>
+      </div>
       <MapFields
         v-else-if="block.block_type === 'map'"
         :content="block.content"
