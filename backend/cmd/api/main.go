@@ -52,6 +52,8 @@ func main() {
 	analyticsRepo := repository.NewAnalyticsRepository(db)
 	qrRepo := repository.NewQRRepository(db)
 	templateRepo := repository.NewTemplateRepository(db)
+	loyaltyRepo := repository.NewLoyaltyRepository(db)
+	printCardRepo := repository.NewPrintCardRepository(db)
 
 	// --- services ---
 	authSvc := services.NewAuthService(userRepo, refreshRepo, cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
@@ -62,22 +64,36 @@ func main() {
 	blockSvc := services.NewBlockService(blockRepo)
 	mediaSvc := services.NewMediaService(mediaRepo, cfg.MediaStoragePath)
 	analyticsSvc := services.NewAnalyticsService(analyticsRepo)
-	qrSvc := services.NewQRManagementService(qrRepo, cfg.PublicBaseURL)
+	qrSvc := services.NewQRManagementService(qrRepo, mediaRepo, mediaSvc, cfg.PublicBaseURL)
+	templateSvc := services.NewTemplateService(templateRepo)
+	loyaltySvc := services.NewLoyaltyService(loyaltyRepo)
+	printCardSvc := services.NewPrintCardService(printCardRepo, profileSvc, blockSvc, qrSvc, loyaltySvc, mediaRepo, analyticsRepo)
+	googleWalletSvc, err := services.NewGoogleWalletService(services.GoogleWalletConfig{
+		IssuerID:            cfg.GoogleWalletIssuerID,
+		ServiceAccountEmail: cfg.GoogleWalletServiceAccountEmail,
+		PrivateKeyPEM:       cfg.GoogleWalletPrivateKey,
+		ReviewStatus:        cfg.GoogleWalletReviewStatus,
+	}, cfg.PublicBaseURL)
+	if err != nil {
+		log.Fatalf("google wallet config error: %v", err)
+	}
 
 	// --- handlers ---
 	authHandler := handlers.NewAuthHandler(authSvc)
 	meHandler := handlers.NewMeHandler(userRepo, licenseRepo)
-	licenseHandler := handlers.NewLicenseHandler(licenseSvc, licenseRepo, auditSvc)
-	clientHandler := handlers.NewClientHandler(clientSvc, licenseRepo, auditSvc)
-	auditHandler := handlers.NewAuditHandler(auditRepo)
+	licenseHandler := handlers.NewLicenseHandler(licenseSvc, licenseRepo, userRepo, auditSvc)
+	clientHandler := handlers.NewClientHandler(clientSvc, licenseRepo, auditSvc, cfg.JWTSecret, cfg.JWTAccessTTL)
+	auditHandler := handlers.NewAuditHandler(auditRepo, userRepo)
 	profileHandler := handlers.NewProfileHandler(profileSvc, mediaRepo)
 	blockHandler := handlers.NewBlockHandler(blockSvc, profileSvc, mediaRepo)
 	mediaHandler := handlers.NewMediaHandler(mediaSvc)
 	publicHandler := handlers.NewPublicHandler(profileSvc, blockSvc, licenseRepo, analyticsSvc, mediaRepo)
 	statsHandler := handlers.NewStatsHandler(profileSvc, analyticsSvc)
-	qrHandler := handlers.NewQRHandler(qrSvc, profileSvc)
+	qrHandler := handlers.NewQRHandler(qrSvc, profileSvc, mediaRepo)
 	adminProfileHandler := handlers.NewAdminProfileHandler(profileSvc, auditSvc)
-	templateHandler := handlers.NewTemplateHandler(templateRepo)
+	templateHandler := handlers.NewTemplateHandler(templateSvc, auditSvc)
+	loyaltyHandler := handlers.NewLoyaltyHandler(loyaltySvc, profileSvc, qrSvc, mediaRepo, auditSvc, googleWalletSvc)
+	printCardHandler := handlers.NewPrintCardHandler(printCardSvc, profileSvc, qrSvc, mediaRepo, mediaSvc, auditSvc, analyticsSvc)
 
 	loginLimiter := appmiddleware.NewIPRateLimiter(rate.Every(2*time.Second), 5)
 	generalLimiter := appmiddleware.NewIPRateLimiter(rate.Every(100*time.Millisecond), 30)
@@ -104,6 +120,12 @@ func main() {
 	// Serve uploaded media (logos, backgrounds, block images) directly.
 	r.Handle("/media/*", http.StripPrefix("/media/", http.FileServer(http.Dir(cfg.MediaStoragePath))))
 
+	// Short, trackable links every exported print card's QR encodes — see
+	// PrintCardHandler.Scan. Deliberately outside /api and unauthenticated:
+	// this is hit directly by a phone camera scanning a physical card.
+	r.Get("/q/{code}", printCardHandler.Scan)
+	r.Get("/q/{code}/{slot}", printCardHandler.Scan)
+
 	r.Route("/api", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
 			r.With(loginLimiter.Middleware).Post("/login", authHandler.Login)
@@ -114,6 +136,10 @@ func main() {
 		r.Route("/public", func(r chi.Router) {
 			r.Get("/profiles/{slug}", publicHandler.GetBySlug)
 			r.Post("/profiles/{slug}/events", publicHandler.TrackEvent)
+
+			r.Get("/loyalty/{token}", loyaltyHandler.PublicStatus)
+			r.Post("/loyalty/{token}/register", loyaltyHandler.PublicRegister)
+			r.Get("/loyalty/{token}/wallet", loyaltyHandler.WalletSaveURL)
 		})
 
 		r.Get("/templates", templateHandler.List)
@@ -148,6 +174,13 @@ func main() {
 
 				r.Get("/me/stats/summary", statsHandler.MySummary)
 
+				r.Get("/me/loyalty", loyaltyHandler.GetMine)
+				r.Patch("/me/loyalty", loyaltyHandler.UpdateMine)
+				r.Get("/me/loyalty/qr", loyaltyHandler.ExportQR)
+				r.Get("/me/loyalty/customers", loyaltyHandler.ListCustomers)
+				r.Post("/me/loyalty/customers/{id}/stamp", loyaltyHandler.StampCustomer)
+				r.Post("/me/loyalty/customers/{id}/redeem", loyaltyHandler.RedeemCustomer)
+
 				r.Post("/media/upload", mediaHandler.Upload)
 			})
 
@@ -163,16 +196,55 @@ func main() {
 					r.Post("/{id}/deactivate", clientHandler.SetActive(false))
 					r.Get("/{id}/profile", adminProfileHandler.GetForClient)
 					r.Post("/{id}/profile", adminProfileHandler.CreateForClient)
+					r.Patch("/{id}/profile/logo", adminProfileHandler.UpdateLogoForClient)
 					r.Post("/{id}/license/activate", licenseHandler.AdminActivate)
+					r.Post("/{id}/impersonate", clientHandler.Impersonate)
+
+					r.Get("/{id}/qr", qrHandler.GetForClient)
+					r.Patch("/{id}/qr", qrHandler.UpdateForClient)
+					r.Get("/{id}/qr/validate", qrHandler.ValidateForClient)
+					r.Get("/{id}/qr/export", qrHandler.ExportForClient)
+					r.Post("/{id}/media/upload", mediaHandler.UploadForClient)
+
+					r.Route("/{id}/print-cards", func(r chi.Router) {
+						r.Get("/", printCardHandler.List)
+						r.Post("/", printCardHandler.Create)
+						r.Post("/preview", printCardHandler.Preview)
+						r.Post("/seed-layout", printCardHandler.SeedLayout)
+						r.Post("/qr-preview", printCardHandler.QRPreview)
+						r.Get("/qr-targets", printCardHandler.QRTargets)
+						r.Get("/{cardId}", printCardHandler.Get)
+						r.Patch("/{cardId}", printCardHandler.Update)
+						r.Patch("/{cardId}/status", printCardHandler.UpdateStatus)
+						r.Delete("/{cardId}", printCardHandler.Delete)
+						r.Get("/{cardId}/export", printCardHandler.Export)
+						r.Get("/{cardId}/layout", printCardHandler.GetLayout)
+						r.Put("/{cardId}/layout", printCardHandler.SaveLayout)
+						r.Get("/{cardId}/layout/versions", printCardHandler.ListLayoutVersions)
+						r.Post("/{cardId}/layout/versions/{version}/restore", printCardHandler.RestoreLayoutVersion)
+					})
 				})
 
+				r.Get("/print-cards/icons/{name}", printCardHandler.IconPreview)
+
 				r.Get("/profiles", adminProfileHandler.List)
+
+				r.Route("/templates", func(r chi.Router) {
+					r.Get("/", templateHandler.ListAllAdmin)
+					r.Post("/", templateHandler.Create)
+					r.Get("/{id}", templateHandler.Get)
+					r.Patch("/{id}", templateHandler.Update)
+					r.Delete("/{id}", templateHandler.Delete)
+					r.Post("/{id}/activate", templateHandler.SetActive(true))
+					r.Post("/{id}/deactivate", templateHandler.SetActive(false))
+				})
 
 				r.Route("/licenses", func(r chi.Router) {
 					r.Post("/codes", licenseHandler.GenerateCode)
 					r.Post("/codes/batch", licenseHandler.GenerateBatch)
 					r.Get("/codes", licenseHandler.ListCodes)
 					r.Post("/codes/{id}/revoke", licenseHandler.RevokeCode)
+					r.Post("/codes/{id}/assign", licenseHandler.AssignCode)
 					r.Get("/{userId}/history", licenseHandler.AdminHistory)
 				})
 

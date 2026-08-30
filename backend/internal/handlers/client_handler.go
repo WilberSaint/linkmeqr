@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-sql-driver/mysql"
@@ -16,13 +17,15 @@ import (
 )
 
 type ClientHandler struct {
-	clients  *services.ClientService
-	licenses *repository.LicenseRepository
-	audit    *services.AuditService
+	clients     *services.ClientService
+	licenses    *repository.LicenseRepository
+	audit       *services.AuditService
+	jwtSecret   string
+	impersonTTL time.Duration
 }
 
-func NewClientHandler(clients *services.ClientService, licenses *repository.LicenseRepository, audit *services.AuditService) *ClientHandler {
-	return &ClientHandler{clients: clients, licenses: licenses, audit: audit}
+func NewClientHandler(clients *services.ClientService, licenses *repository.LicenseRepository, audit *services.AuditService, jwtSecret string, impersonTTL time.Duration) *ClientHandler {
+	return &ClientHandler{clients: clients, licenses: licenses, audit: audit, jwtSecret: jwtSecret, impersonTTL: impersonTTL}
 }
 
 type clientWithLicense struct {
@@ -148,4 +151,39 @@ func (h *ClientHandler) SetActive(active bool) http.HandlerFunc {
 
 		utils.JSON(w, http.StatusOK, map[string]bool{"ok": true})
 	}
+}
+
+type impersonateResponse struct {
+	AccessToken string      `json:"access_token"`
+	User        models.User `json:"user"`
+}
+
+// Impersonate handles POST /api/admin/clients/:id/impersonate (ADMIN).
+// Mints a short-lived, CLIENT-scoped access token so the admin can operate
+// the client panel exactly as that client would. No refresh token is issued,
+// so the session can only ever last impersonTTL.
+func (h *ClientHandler) Impersonate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	client, err := h.clients.Get(r.Context(), id)
+	if err != nil {
+		utils.Error(w, http.StatusNotFound, "not_found", "Client not found.")
+		return
+	}
+	if !client.IsActive {
+		utils.Error(w, http.StatusConflict, "client_inactive", "Cannot impersonate an inactive client.")
+		return
+	}
+
+	adminID := middleware.UserIDFromContext(r.Context())
+
+	token, err := utils.GenerateImpersonationAccessToken(h.jwtSecret, client.ID, string(client.Role), adminID, h.impersonTTL)
+	if err != nil {
+		utils.Error(w, http.StatusInternalServerError, "internal_error", "Could not start impersonation session.")
+		return
+	}
+
+	h.audit.Log(r.Context(), adminID, "impersonate_start", "user", client.ID, r.RemoteAddr, nil)
+
+	utils.JSON(w, http.StatusOK, impersonateResponse{AccessToken: token, User: *client})
 }

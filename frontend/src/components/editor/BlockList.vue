@@ -6,29 +6,58 @@ import BlockListItem from './BlockListItem.vue'
 const props = defineProps<{ blocks: ProfileBlock[]; uploadingMenuFileFor?: string | null }>()
 const emit = defineEmits<{
   reorder: [blocks: ProfileBlock[]]
-  update: [id: string, payload: Partial<ProfileBlock>]
+  update: [id: string, payload: Partial<ProfileBlock>, debounced?: boolean]
   remove: [id: string]
   duplicate: [id: string]
   add: [type: BlockType]
   uploadMenuFile: [id: string, file: File]
 }>()
 
-const blockTypes: { value: BlockType; label: string }[] = [
-  { value: 'instagram', label: 'Instagram' },
-  { value: 'facebook', label: 'Facebook' },
-  { value: 'tiktok', label: 'TikTok' },
-  { value: 'youtube', label: 'YouTube' },
-  { value: 'whatsapp', label: 'WhatsApp' },
-  { value: 'phone', label: 'Teléfono' },
-  { value: 'email', label: 'Email' },
-  { value: 'location', label: 'Ubicación' },
-  { value: 'website', label: 'Sitio web' },
-  { value: 'menu', label: 'Menú' },
-  { value: 'catalog', label: 'Catálogo' },
-  { value: 'image', label: 'Imagen' },
-  { value: 'video', label: 'Video' },
-  { value: 'text', label: 'Texto' },
-  { value: 'link', label: 'Enlace personalizado' },
+// Twenty block types in one flat list gave no clue what any of them were for,
+// or that "Galería" and "Testimonios" even existed down at the bottom.
+// Grouping them by what the visitor would DO turns scanning the list into a
+// decision instead of a memory test.
+const blockGroups: { label: string; types: { value: BlockType; label: string }[] }[] = [
+  {
+    label: 'Redes sociales',
+    types: [
+      { value: 'instagram', label: 'Instagram' },
+      { value: 'facebook', label: 'Facebook' },
+      { value: 'tiktok', label: 'TikTok' },
+      { value: 'youtube', label: 'YouTube' },
+    ],
+  },
+  {
+    label: 'Contacto',
+    types: [
+      { value: 'whatsapp', label: 'WhatsApp' },
+      { value: 'phone', label: 'Teléfono' },
+      { value: 'email', label: 'Correo' },
+      { value: 'location', label: 'Ubicación' },
+      { value: 'map', label: 'Mapa' },
+      { value: 'hours', label: 'Horario de atención' },
+    ],
+  },
+  {
+    label: 'Tu negocio',
+    types: [
+      { value: 'menu', label: 'Menú' },
+      { value: 'catalog', label: 'Catálogo' },
+      { value: 'website', label: 'Sitio web' },
+      { value: 'google_review', label: 'Reseña en Google' },
+      { value: 'testimonials', label: 'Testimonios' },
+    ],
+  },
+  {
+    label: 'Contenido',
+    types: [
+      { value: 'gallery', label: 'Galería de fotos' },
+      { value: 'image', label: 'Imagen' },
+      { value: 'video', label: 'Video' },
+      { value: 'text', label: 'Texto' },
+      { value: 'link', label: 'Enlace personalizado' },
+    ],
+  },
 ]
 
 function onDragEnd(newList: ProfileBlock[]) {
@@ -49,7 +78,9 @@ function onDragEnd(newList: ProfileBlock[]) {
       "
     >
       <option value="">+ Agregar bloque…</option>
-      <option v-for="t in blockTypes" :key="t.value" :value="t.value">{{ t.label }}</option>
+      <optgroup v-for="g in blockGroups" :key="g.label" :label="g.label">
+        <option v-for="t in g.types" :key="t.value" :value="t.value">{{ t.label }}</option>
+      </optgroup>
     </select>
 
     <draggable
@@ -63,7 +94,7 @@ function onDragEnd(newList: ProfileBlock[]) {
         <BlockListItem
           :block="element"
           :menu-file-uploading="uploadingMenuFileFor === element.id"
-          @update="(payload) => emit('update', element.id, payload)"
+          @update="(payload, debounced) => emit('update', element.id, payload, debounced)"
           @remove="emit('remove', element.id)"
           @duplicate="emit('duplicate', element.id)"
           @upload-menu-file="(file) => emit('uploadMenuFile', element.id, file)"
@@ -71,8 +102,15 @@ function onDragEnd(newList: ProfileBlock[]) {
       </template>
     </draggable>
 
-    <p v-if="blocks.length === 0" class="text-center text-sm text-gray-400 py-6">
-      Agrega tu primer bloque arriba.
-    </p>
+    <div
+      v-if="blocks.length === 0"
+      class="rounded-lg border border-dashed border-gray-300 px-4 py-8 text-center"
+    >
+      <p class="text-sm font-medium text-gray-700">Tu perfil aún no tiene bloques</p>
+      <p class="mx-auto mt-1.5 max-w-xs text-xs text-gray-500">
+        Cada bloque es un botón o sección de tu página: tu WhatsApp, tu menú, tus redes. Elige el primero en la lista
+        de arriba.
+      </p>
+    </div>
   </div>
 </template>

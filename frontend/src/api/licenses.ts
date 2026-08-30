@@ -27,6 +27,18 @@ export function revokeCode(id: string) {
   return apiClient.post(`/admin/licenses/codes/${id}/revoke`)
 }
 
+/**
+ * Reserves an unused code for one client, so only they can redeem it. Passing
+ * null releases it back into the pool.
+ *
+ * Without a reservation a code is a bearer token: whoever types it first gets
+ * the licence, which is what you want for a printed batch and not what you
+ * want for a code generated for one paying client.
+ */
+export function assignCode(id: string, userId: string | null) {
+  return apiClient.post(`/admin/licenses/codes/${id}/assign`, { user_id: userId })
+}
+
 export function clientLicenseHistory(userId: string) {
   return apiClient.get<LicenseActivation[]>(`/admin/licenses/${userId}/history`).then((r) => r.data)
 }

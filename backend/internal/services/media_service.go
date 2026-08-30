@@ -88,3 +88,10 @@ func (s *MediaService) Upload(ctx context.Context, ownerUserID string, fileName,
 	}
 	return media, nil
 }
+
+// ReadFile loads the raw bytes for an already-uploaded media row back off disk,
+// e.g. to composite a logo onto a rendered QR code.
+func (s *MediaService) ReadFile(m *models.Media) ([]byte, error) {
+	fullPath := filepath.Join(s.storagePath, filepath.Base(m.FilePath))
+	return os.ReadFile(fullPath)
+}

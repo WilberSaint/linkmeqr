@@ -1,0 +1,55 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { Star } from '@lucide/vue'
+import type { ProfileBlock, ProfileTheme } from '@/types'
+import GoogleIcon from '@/components/icons/GoogleIcon.vue'
+
+const props = defineProps<{ block: ProfileBlock; theme: ProfileTheme | null }>()
+const emit = defineEmits<{ click: [] }>()
+
+function onClick() {
+  emit('click')
+  if (props.block.url) {
+    window.open(props.block.url, '_blank', 'noopener')
+  }
+}
+
+const buttonShapeClass = computed(() => {
+  switch (props.theme?.button_style) {
+    case 'square':
+      return 'rounded-none'
+    case 'pill':
+      return 'rounded-full'
+    case 'outline':
+      return 'rounded-lg border-2 bg-transparent'
+    default:
+      return 'rounded-xl'
+  }
+})
+</script>
+
+<template>
+  <div
+    class="w-full rounded-xl p-4 text-center flex flex-col items-center gap-2"
+    :style="{ backgroundColor: 'rgba(0,0,0,0.04)', color: theme?.text_color }"
+  >
+    <GoogleIcon :size="22" />
+    <p class="text-sm font-medium">{{ block.title || '¿Nos regalas una reseña?' }}</p>
+    <div class="flex gap-0.5">
+      <Star v-for="n in 5" :key="n" :size="16" fill="#FBBC05" color="#FBBC05" />
+    </div>
+    <button
+      type="button"
+      class="mt-1 px-4 py-2 text-sm font-medium shadow-sm transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98]"
+      :class="buttonShapeClass"
+      :style="{
+        backgroundColor: theme?.button_style === 'outline' ? 'transparent' : theme?.secondary_color ?? '#6366f1',
+        borderColor: theme?.secondary_color ?? '#6366f1',
+        color: theme?.button_style === 'outline' ? theme?.secondary_color : theme?.button_text_color ?? '#ffffff',
+      }"
+      @click="onClick"
+    >
+      Escribir reseña
+    </button>
+  </div>
+</template>

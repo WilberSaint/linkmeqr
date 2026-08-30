@@ -97,6 +97,46 @@ func seedTemplates(ctx context.Context, db *sqlx.DB) error {
 				"logo_background_color":"#111827","logo_text_color":"#ffffff","logo_display_mode":"initial","logo_shape":"circle",
 				"font_family":"Poppins","button_style":"pill","button_shadow":true}`,
 		},
+		{
+			slug: "ocean-breeze", name: "Ocean Breeze", sortOrder: 11,
+			description: "Azules y turquesas frescos, en cuadrícula — ideal para spas, wellness y playa.",
+			defaultTheme: `{"background_type":"gradient","background_value":"linear-gradient(160deg,#e0f2fe,#bae6fd)",
+				"primary_color":"#075985","secondary_color":"#0284c7","text_color":"#0c4a6e","button_text_color":"#ffffff",
+				"logo_background_color":"#0284c7","logo_text_color":"#ffffff","logo_display_mode":"initial","logo_shape":"circle",
+				"font_family":"Nunito","button_style":"rounded","button_shadow":false,"layout":"grid"}`,
+		},
+		{
+			slug: "coffee-house", name: "Coffee House", sortOrder: 12,
+			description: "Cafés y cremas cálidos, tipografía suave — para cafeterías y panaderías.",
+			defaultTheme: `{"background_type":"color","background_value":"#fdf6ec","primary_color":"#5c3a21",
+				"secondary_color":"#8b5e34","text_color":"#4a2e18","button_text_color":"#fdf6ec",
+				"logo_background_color":"#8b5e34","logo_text_color":"#fdf6ec","logo_display_mode":"initial","logo_shape":"rounded",
+				"font_family":"Nunito","button_style":"rounded","button_shadow":false}`,
+		},
+		{
+			slug: "neon-nights", name: "Neon Nights", sortOrder: 13,
+			description: "Fondo negro con acentos neón en cuadrícula — para vida nocturna y eventos.",
+			defaultTheme: `{"background_type":"color","background_value":"#0a0a0f","primary_color":"#f0abfc",
+				"secondary_color":"#d946ef","text_color":"#f5f3ff","button_text_color":"#0a0a0f",
+				"logo_background_color":"#d946ef","logo_text_color":"#0a0a0f","logo_display_mode":"initial","logo_shape":"circle",
+				"font_family":"Montserrat","button_style":"pill","button_shadow":true,"layout":"grid"}`,
+		},
+		{
+			slug: "botanical", name: "Botanical", sortOrder: 14,
+			description: "Verde salvia y crema, serif elegante — para floristerías y vivieros.",
+			defaultTheme: `{"background_type":"color","background_value":"#f4f2ec","primary_color":"#4d5c45",
+				"secondary_color":"#6b7f5e","text_color":"#3a3f34","button_text_color":"#f4f2ec",
+				"logo_background_color":"#6b7f5e","logo_text_color":"#f4f2ec","logo_display_mode":"initial","logo_shape":"circle",
+				"font_family":"Playfair Display","button_style":"outline","button_shadow":false}`,
+		},
+		{
+			slug: "bold-statement", name: "Bold Statement", sortOrder: 15,
+			description: "Negro y amarillo de alto contraste — para marcas que no pasan desapercibidas.",
+			defaultTheme: `{"background_type":"color","background_value":"#111111","primary_color":"#facc15",
+				"secondary_color":"#facc15","text_color":"#fafafa","button_text_color":"#111111",
+				"logo_background_color":"#facc15","logo_text_color":"#111111","logo_display_mode":"initial","logo_shape":"square",
+				"font_family":"Montserrat","button_style":"square","button_shadow":false}`,
+		},
 	}
 
 	for _, t := range templates {

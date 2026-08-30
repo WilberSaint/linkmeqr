@@ -18,6 +18,11 @@ import (
 var (
 	ErrCodeNotFound  = errors.New("activation code not found")
 	ErrCodeNotUsable = errors.New("activation code already used or revoked")
+	// ErrCodeNotYours is a code reserved for a different client. Deliberately
+	// distinct from "not found": telling the wrong person a code exists but is
+	// not theirs is far more useful than a blanket denial, and reveals nothing
+	// they could not already infer by trying it.
+	ErrCodeNotYours = errors.New("activation code belongs to another client")
 )
 
 type LicenseService struct {
@@ -56,6 +61,17 @@ func DurationDays(durationType models.DurationType, customDays int) (int, error)
 	default:
 		return 0, fmt.Errorf("unknown duration type: %s", durationType)
 	}
+}
+
+// AssignCode reserves an unused code for one client, or releases it when
+// userID is nil.
+//
+// Codes are bearer tokens by default: whoever types one first claims it. That
+// is right for a printed batch handed out at an event, and wrong for a code
+// generated for one paying client — assigning it means only that client can
+// redeem it, so a leaked code cannot be spent by somebody else.
+func (s *LicenseService) AssignCode(ctx context.Context, codeID string, userID *string) error {
+	return s.codes.Assign(ctx, codeID, userID)
 }
 
 // GenerateCode creates a single activation code.
@@ -150,6 +166,12 @@ func (s *LicenseService) ActivateCode(ctx context.Context, userID, code string) 
 	}
 	if ac.Status != models.CodeUnused {
 		return nil, ErrCodeNotUsable
+	}
+	// A code reserved for one client is not a bearer token any more: handing
+	// it to somebody else must not silently transfer the licence they paid
+	// for.
+	if ac.AssignedUserID != nil && *ac.AssignedUserID != userID {
+		return nil, ErrCodeNotYours
 	}
 
 	now := time.Now().UTC()

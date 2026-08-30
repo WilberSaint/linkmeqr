@@ -355,6 +355,26 @@ for (const f of AVAILABLE_FONTS) ensureGoogleFontLoaded(f)
         />
         Sombra en botones
       </label>
+
+      <label class="block text-xs font-medium text-gray-600 mb-1.5 mt-4">Disposición de los bloques</label>
+      <div class="flex gap-2">
+        <button
+          type="button"
+          class="flex-1 rounded-lg border-2 px-3 py-2 text-xs font-medium transition"
+          :class="theme.layout === 'grid' ? 'border-gray-200 text-gray-500 hover:border-gray-300' : 'border-indigo-500 bg-indigo-50 text-indigo-700'"
+          @click="emit('update', { layout: 'list' })"
+        >
+          Lista
+        </button>
+        <button
+          type="button"
+          class="flex-1 rounded-lg border-2 px-3 py-2 text-xs font-medium transition"
+          :class="theme.layout === 'grid' ? 'border-indigo-500 bg-indigo-50 text-indigo-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'"
+          @click="emit('update', { layout: 'grid' })"
+        >
+          Cuadrícula
+        </button>
+      </div>
     </section>
   </div>
 </template>

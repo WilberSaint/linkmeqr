@@ -87,6 +87,21 @@ export const useEditorStore = defineStore('editor', () => {
     })
   }
 
+  /**
+   * Applies a block edit to local state only, without touching the server.
+   *
+   * The live preview renders from this store, so without it the preview could
+   * not move until a PATCH round-tripped — which is why block fields used to
+   * save on blur and the phone sat frozen while you typed into them. The view
+   * pairs this with a debounced updateBlock, the same "update now, persist
+   * shortly" split the theme editor already used.
+   */
+  function patchBlockLocal(id: string, payload: Partial<ProfileBlock>) {
+    const idx = blocks.value.findIndex((b) => b.id === id)
+    if (idx === -1) return
+    blocks.value[idx] = { ...blocks.value[idx], ...payload }
+  }
+
   async function removeBlock(id: string) {
     await withSaveStatus(async () => {
       await profileApi.deleteBlock(id)
@@ -119,6 +134,7 @@ export const useEditorStore = defineStore('editor', () => {
     blocks,
     loading,
     saveStatus,
+    patchBlockLocal,
     loadAll,
     saveProfile,
     saveTheme,

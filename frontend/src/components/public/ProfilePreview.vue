@@ -59,36 +59,45 @@ const logoShapeClass = computed(() => {
     :style="{ ...backgroundStyle, fontFamily: theme?.font_family || 'Inter', color: theme?.text_color }"
   >
     <div class="max-w-sm mx-auto px-4 py-8 flex flex-col items-center">
-      <img
-        v-if="showLogoImage"
-        :src="profile!.logo_url!"
-        alt="Logo"
-        class="w-20 h-20 object-cover shrink-0 shadow-sm"
-        :class="logoShapeClass"
-      />
-      <div
-        v-else
-        class="w-20 h-20 flex items-center justify-center text-2xl font-semibold shrink-0"
-        :class="logoShapeClass"
-        :style="{ backgroundColor: theme?.logo_background_color, color: theme?.logo_text_color || '#ffffff' }"
-      >
-        {{ (profile?.business_name || '?').charAt(0).toUpperCase() }}
+      <div class="animate-fade-in-up flex flex-col items-center">
+        <img
+          v-if="showLogoImage"
+          :src="profile!.logo_url!"
+          alt="Logo"
+          class="w-20 h-20 object-cover shrink-0 shadow-sm"
+          :class="logoShapeClass"
+        />
+        <div
+          v-else
+          class="w-20 h-20 flex items-center justify-center text-2xl font-semibold shrink-0"
+          :class="logoShapeClass"
+          :style="{ backgroundColor: theme?.logo_background_color, color: theme?.logo_text_color || '#ffffff' }"
+        >
+          {{ (profile?.business_name || '?').charAt(0).toUpperCase() }}
+        </div>
+        <h1 class="mt-3 text-lg font-semibold text-center">{{ profile?.business_name || 'Tu negocio' }}</h1>
+        <p v-if="profile?.description" class="text-sm text-center opacity-80 mt-1">{{ profile.description }}</p>
       </div>
-      <h1 class="mt-3 text-lg font-semibold text-center">{{ profile?.business_name || 'Tu negocio' }}</h1>
-      <p v-if="profile?.description" class="text-sm text-center opacity-80 mt-1">{{ profile.description }}</p>
 
-      <div class="w-full mt-6 space-y-2.5">
+      <TransitionGroup
+        tag="div"
+        name="block-fade"
+        class="w-full mt-6"
+        :class="theme?.layout === 'grid' ? 'grid grid-cols-2 gap-3' : 'space-y-2.5'"
+      >
         <BlockRenderer
-          v-for="block in visibleBlocks"
+          v-for="(block, i) in visibleBlocks"
           :key="block.id"
           :block="block"
           :theme="theme"
+          :card="theme?.layout === 'grid'"
+          :style="{ transitionDelay: `${Math.min(i, 8) * 40}ms` }"
           @click="emit('blockClick', block.id)"
         />
-        <p v-if="visibleBlocks.length === 0" class="text-center text-sm opacity-60 py-8">
-          Todavía no hay bloques visibles.
-        </p>
-      </div>
+      </TransitionGroup>
+      <p v-if="visibleBlocks.length === 0" class="text-center text-sm opacity-60 py-8">
+        Todavía no hay bloques visibles.
+      </p>
     </div>
   </div>
 </template>

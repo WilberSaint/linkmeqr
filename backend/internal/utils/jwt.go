@@ -14,6 +14,10 @@ import (
 type Claims struct {
 	UserID string `json:"sub"`
 	Role   string `json:"role"`
+	// ImpersonatorID is set only on tokens minted via admin impersonation
+	// ("view as client"), carrying the admin's own user id so middleware and
+	// audit logging can tell an impersonated session apart from a real one.
+	ImpersonatorID string `json:"imp,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -21,6 +25,24 @@ func GenerateAccessToken(secret, userID, role string, ttl time.Duration) (string
 	claims := Claims{
 		UserID: userID,
 		Role:   role,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(secret))
+}
+
+// GenerateImpersonationAccessToken mints an access token for targetUserID
+// (the client being viewed) tagged with impersonatorID (the admin). It is
+// deliberately never paired with a refresh token, so the session can only
+// ever last ttl.
+func GenerateImpersonationAccessToken(secret, targetUserID, role, impersonatorID string, ttl time.Duration) (string, error) {
+	claims := Claims{
+		UserID:         targetUserID,
+		Role:           role,
+		ImpersonatorID: impersonatorID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

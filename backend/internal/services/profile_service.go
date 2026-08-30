@@ -84,6 +84,7 @@ func (s *ProfileService) CreateForUser(ctx context.Context, userID, businessName
 		LogoShape:           "circle",
 		FontFamily:          "Inter",
 		ButtonStyle:         "rounded",
+		Layout:              "list",
 	}
 	if err := s.themes.Create(ctx, theme); err != nil {
 		return nil, err

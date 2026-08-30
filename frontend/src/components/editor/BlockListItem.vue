@@ -4,14 +4,28 @@ import { computed, ref } from 'vue'
 import type { ProfileBlock } from '@/types'
 import { blockLabel } from '@/composables/blockLabels'
 import ColorInput from './ColorInput.vue'
+import GalleryFields from './blocks/GalleryFields.vue'
+import HoursFields from './blocks/HoursFields.vue'
+import TestimonialsFields from './blocks/TestimonialsFields.vue'
+import MapFields from './blocks/MapFields.vue'
 
 const props = defineProps<{ block: ProfileBlock; menuFileUploading?: boolean }>()
 const emit = defineEmits<{
-  update: [payload: Partial<ProfileBlock>]
+  /**
+   * debounced tells the parent this came from a keystroke, so it can show the
+   * change in the preview at once but coalesce the saves. Structural edits
+   * leave it off and persist immediately.
+   */
+  update: [payload: Partial<ProfileBlock>, debounced?: boolean]
   remove: []
   duplicate: []
   uploadMenuFile: [file: File]
 }>()
+
+/** Text fields report on every keystroke so the live preview actually moves. */
+function onType(payload: Partial<ProfileBlock>) {
+  emit('update', payload, true)
+}
 
 const expanded = ref(false)
 
@@ -66,24 +80,34 @@ function setCustomColor(color: string) {
 </script>
 
 <template>
-  <div class="border border-gray-200 rounded-lg bg-white">
+  <div class="rounded-lg border border-gray-200 bg-white" :class="block.is_visible ? '' : 'opacity-60'">
     <div class="flex items-center gap-2 px-3 py-2.5">
       <GripVertical :size="16" class="text-gray-300 drag-handle cursor-grab shrink-0" />
       <div class="flex-1 min-w-0">
         <p class="text-sm font-medium text-gray-900 truncate">{{ block.title || blockLabel(block.block_type) }}</p>
         <p class="text-xs text-gray-400">{{ blockLabel(block.block_type) }}</p>
       </div>
-      <button class="p-1.5 text-gray-400 hover:text-gray-700" @click="toggleVisible">
+      <button
+        class="p-1.5 text-gray-400 hover:text-gray-700"
+        :title="block.is_visible ? 'Ocultar del perfil' : 'Mostrar en el perfil'"
+        :aria-label="block.is_visible ? 'Ocultar del perfil' : 'Mostrar en el perfil'"
+        @click="toggleVisible"
+      >
         <Eye v-if="block.is_visible" :size="16" />
         <EyeOff v-else :size="16" />
       </button>
-      <button class="p-1.5 text-gray-400 hover:text-gray-700" @click="emit('duplicate')">
+      <button class="p-1.5 text-gray-400 hover:text-gray-700" title="Duplicar" aria-label="Duplicar" @click="emit('duplicate')">
         <Copy :size="16" />
       </button>
-      <button class="p-1.5 text-gray-400 hover:text-red-600" @click="emit('remove')">
+      <button class="p-1.5 text-gray-400 hover:text-red-600" title="Eliminar" aria-label="Eliminar" @click="emit('remove')">
         <Trash2 :size="16" />
       </button>
-      <button class="p-1.5 text-gray-400 hover:text-gray-700" @click="expanded = !expanded">
+      <button
+        class="p-1.5 text-gray-400 hover:text-gray-700"
+        :title="expanded ? 'Contraer' : 'Editar'"
+        :aria-label="expanded ? 'Contraer' : 'Editar'"
+        @click="expanded = !expanded"
+      >
         <ChevronUp v-if="expanded" :size="16" />
         <ChevronDown v-else :size="16" />
       </button>
@@ -95,7 +119,7 @@ function setCustomColor(color: string) {
         <input
           :value="block.title ?? ''"
           class="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-          @change="emit('update', { title: ($event.target as HTMLInputElement).value })"
+          @input="onType({ title: ($event.target as HTMLInputElement).value })"
         />
       </div>
       <div v-if="block.block_type === 'menu'">
@@ -113,16 +137,43 @@ function setCustomColor(color: string) {
           :value="block.url ?? ''"
           placeholder="https://…"
           class="mt-1 w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-          @change="emit('update', { url: ($event.target as HTMLInputElement).value })"
+          @input="onType({ url: ($event.target as HTMLInputElement).value })"
         />
       </div>
+      <GalleryFields
+        v-else-if="block.block_type === 'gallery'"
+        :content="block.content"
+        @update="(content) => emit('update', { content })"
+      />
+      <HoursFields
+        v-else-if="block.block_type === 'hours'"
+        :content="block.content"
+        @update="(content) => emit('update', { content })"
+      />
+      <TestimonialsFields
+        v-else-if="block.block_type === 'testimonials'"
+        :content="block.content"
+        @update="(content) => emit('update', { content })"
+      />
+      <MapFields
+        v-else-if="block.block_type === 'map'"
+        :content="block.content"
+        @update="(content) => emit('update', { content })"
+      />
       <div v-else-if="block.block_type !== 'text'">
-        <label class="block text-xs font-medium text-gray-600 mb-1">URL</label>
+        <label class="block text-xs font-medium text-gray-600 mb-1">
+          {{ block.block_type === 'google_review' ? 'Link de reseña de Google' : 'URL' }}
+        </label>
         <input
           :value="block.url ?? ''"
+          placeholder="https://…"
           class="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-          @change="emit('update', { url: ($event.target as HTMLInputElement).value })"
+          @input="onType({ url: ($event.target as HTMLInputElement).value })"
         />
+        <p v-if="block.block_type === 'google_review'" class="text-[11px] text-gray-400 mt-1">
+          Búscalo en Google Maps → tu negocio → "Pedir reseñas" te da este link, o genera uno con la
+          <a href="https://developers.google.com/maps/documentation/places/web-service/place-id" target="_blank" rel="noopener" class="text-indigo-600 hover:underline">herramienta de Place ID de Google</a>.
+        </p>
       </div>
       <div v-if="block.block_type === 'text'">
         <label class="block text-xs font-medium text-gray-600 mb-1">Descripción</label>
@@ -130,7 +181,7 @@ function setCustomColor(color: string) {
           :value="block.description ?? ''"
           rows="2"
           class="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-          @change="emit('update', { description: ($event.target as HTMLTextAreaElement).value })"
+          @input="onType({ description: ($event.target as HTMLTextAreaElement).value })"
         />
       </div>
       <div v-if="isBrandBlock">

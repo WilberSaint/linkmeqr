@@ -10,6 +10,13 @@ export interface BreakdownRow {
   count: number
 }
 
+export interface BlockClickRow {
+  block_id: string
+  title: string
+  block_type: string
+  count: number
+}
+
 export interface StatsSummary {
   total_views: number
   total_clicks: number
@@ -19,6 +26,7 @@ export interface StatsSummary {
   devices: BreakdownRow[]
   os: BreakdownRow[]
   browsers: BreakdownRow[]
+  block_clicks: BlockClickRow[]
 }
 
 export function myStatsSummary(range: '7d' | '30d' = '30d') {

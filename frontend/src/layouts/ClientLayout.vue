@@ -4,9 +4,8 @@ import AppShell from '@/components/common/AppShell.vue'
 const links = [
   { to: '/client', label: 'Resumen' },
   { to: '/client/editor', label: 'Editor de perfil' },
-  { to: '/client/qr', label: 'Código QR' },
   { to: '/client/license', label: 'Licencia' },
-  { to: '/client/stats', label: 'Estadísticas' },
+  { to: '/client/loyalty', label: 'Lealtad' },
 ]
 </script>
 

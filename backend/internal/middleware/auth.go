@@ -11,8 +11,9 @@ import (
 type contextKey string
 
 const (
-	ctxUserID contextKey = "userID"
-	ctxRole   contextKey = "role"
+	ctxUserID       contextKey = "userID"
+	ctxRole         contextKey = "role"
+	ctxImpersonator contextKey = "impersonatorID"
 )
 
 func RequireAuth(jwtSecret string) func(http.Handler) http.Handler {
@@ -33,6 +34,9 @@ func RequireAuth(jwtSecret string) func(http.Handler) http.Handler {
 
 			ctx := context.WithValue(r.Context(), ctxUserID, claims.UserID)
 			ctx = context.WithValue(ctx, ctxRole, claims.Role)
+			if claims.ImpersonatorID != "" {
+				ctx = context.WithValue(ctx, ctxImpersonator, claims.ImpersonatorID)
+			}
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -59,4 +63,12 @@ func UserIDFromContext(ctx context.Context) string {
 func RoleFromContext(ctx context.Context) string {
 	role, _ := ctx.Value(ctxRole).(string)
 	return role
+}
+
+// ImpersonatorIDFromContext returns the admin's user id when the current
+// request is running under an impersonated ("view as client") session, or
+// "" for a normal session.
+func ImpersonatorIDFromContext(ctx context.Context) string {
+	id, _ := ctx.Value(ctxImpersonator).(string)
+	return id
 }

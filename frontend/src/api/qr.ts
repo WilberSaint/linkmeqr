@@ -11,6 +11,11 @@ export function updateMyQr(payload: {
   module_style: string
   eye_style: string
   logo_media_id?: string | null
+  logo_style?: string
+  eye_color_from_logo?: boolean
+  preset_icon?: string | null
+  frame_shape?: string | null
+  shape_fill?: boolean
 }) {
   return apiClient.patch<QrCode>('/me/qr', payload).then((r) => r.data)
 }

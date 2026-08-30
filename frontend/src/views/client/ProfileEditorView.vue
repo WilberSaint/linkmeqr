@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ArrowLeft, Check, Loader2 } from '@lucide/vue'
+import { ArrowLeft, Check, Copy, ExternalLink, Loader2 } from '@lucide/vue'
 import { useEditorStore } from '@/stores/editor'
 import * as templatesApi from '@/api/templates'
 import * as profileApi from '@/api/profile'
 import type { BlockType, ProfileBlock, ProfileTheme, Template } from '@/types'
+import { blockLabel } from '@/composables/blockLabels'
 import ProfilePreview from '@/components/public/ProfilePreview.vue'
 import BlockList from '@/components/editor/BlockList.vue'
 import ThemeEditor from '@/components/editor/ThemeEditor.vue'
@@ -15,6 +16,7 @@ const editor = useEditorStore()
 const router = useRouter()
 const templates = ref<Template[]>([])
 const tab = ref<'content' | 'design' | 'template'>('content')
+const mobileView = ref<'edit' | 'preview'>('edit')
 
 const profileForm = ref({ business_name: '', description: '' })
 const logoUploading = ref(false)
@@ -41,7 +43,9 @@ async function load() {
   }
 }
 
-function currentProfilePayload(overrides: Partial<{ template_id: string | null; logo_media_id: string | null }> = {}) {
+function currentProfilePayload(
+  overrides: Partial<{ template_id: string | null; logo_media_id: string | null; is_published: boolean }> = {},
+) {
   if (!editor.profile) return null
   return {
     business_name: profileForm.value.business_name,
@@ -82,15 +86,53 @@ function onThemeUpdate(payload: Partial<ProfileTheme>) {
   }, 350)
 }
 
+// A couple of block types read better with a persuasive default title
+// (editable afterward) instead of starting blank.
+const DEFAULT_TITLES: Partial<Record<BlockType, string>> = {
+  google_review: '¿Nos regalas una reseña?',
+}
+
 async function onAddBlock(type: BlockType) {
-  await editor.addBlock({ block_type: type, title: '', is_visible: true })
+  await editor.addBlock({ block_type: type, title: DEFAULT_TITLES[type] ?? '', is_visible: true })
 }
 
-async function onUpdateBlock(id: string, payload: Partial<ProfileBlock>) {
-  await editor.updateBlock(id, payload)
+/**
+ * Block edits show in the preview immediately and are saved shortly after.
+ *
+ * Text fields inside a block used to only fire on blur, so typing a title left
+ * the phone frame frozen until you clicked somewhere else — the live preview
+ * was not actually live for the content people spend most of their time on.
+ * Structural edits (visibility, delete, colour mode) still save at once: there
+ * is no stream of keystrokes to coalesce.
+ */
+const blockSaveTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function onUpdateBlock(id: string, payload: Partial<ProfileBlock>, debounced = false) {
+  editor.patchBlockLocal(id, payload)
+
+  const existing = blockSaveTimers.get(id)
+  if (existing) clearTimeout(existing)
+
+  if (!debounced) {
+    blockSaveTimers.delete(id)
+    void editor.updateBlock(id, payload)
+    return
+  }
+  blockSaveTimers.set(
+    id,
+    setTimeout(() => {
+      blockSaveTimers.delete(id)
+      void editor.updateBlock(id, payload)
+    }, 500),
+  )
 }
 
-async function onRemoveBlock(id: string) {
+async function onRemoveBlockConfirmed(id: string) {
+  const block = editor.blocks.find((b) => b.id === id)
+  const name = block?.title || (block ? blockLabel(block.block_type) : 'este bloque')
+  // Deleting was instant and unrecoverable — one mis-click on a gallery took
+  // every photo in it with no undo anywhere in this editor.
+  if (!confirm(`¿Eliminar «${name}»? No se puede deshacer.`)) return
   await editor.removeBlock(id)
 }
 
@@ -101,6 +143,34 @@ async function onDuplicateBlock(id: string) {
 async function onReorder(newList: ProfileBlock[]) {
   editor.reorderLocal(newList)
   await editor.persistOrder()
+}
+
+/**
+ * is_published gates the whole public page — the backend refuses to serve an
+ * unpublished profile. It was read and written back on every save, shown as a
+ * badge in the admin panel and counted on its dashboard, yet nothing anywhere
+ * could actually change it: a client had no way to take their page down.
+ */
+async function onTogglePublished() {
+  if (!editor.profile) return
+  const next = !editor.profile.is_published
+  if (!next && !confirm('¿Despublicar tu perfil? Quien escanee tu QR verá un aviso de que no está disponible.')) return
+  const payload = currentProfilePayload({ is_published: next })
+  if (!payload) return
+  editor.profile = { ...editor.profile, is_published: next }
+  await editor.saveProfile(payload)
+}
+
+const publicUrl = computed(() =>
+  editor.profile?.slug ? `${window.location.origin}/p/${editor.profile.slug}` : '',
+)
+const linkCopied = ref(false)
+
+async function copyPublicUrl() {
+  if (!publicUrl.value) return
+  await navigator.clipboard.writeText(publicUrl.value)
+  linkCopied.value = true
+  setTimeout(() => (linkCopied.value = false), 1500)
 }
 
 async function onSelectTemplate(templateId: string) {
@@ -187,23 +257,87 @@ onMounted(load)
         <ArrowLeft :size="16" />
         Volver
       </button>
-      <div class="flex items-center gap-1.5 text-xs text-gray-400">
-        <template v-if="editor.saveStatus === 'saving'">
-          <Loader2 :size="13" class="animate-spin" />
-          Guardando…
-        </template>
-        <template v-else-if="editor.saveStatus === 'saved'">
-          <Check :size="13" class="text-green-600" />
-          <span class="text-green-600">Guardado</span>
-        </template>
-        <template v-else>
-          Los cambios se guardan automáticamente
-        </template>
+      <div class="flex items-center gap-3">
+        <div class="hidden items-center gap-1.5 text-xs text-gray-400 sm:flex">
+          <template v-if="editor.saveStatus === 'saving'">
+            <Loader2 :size="13" class="animate-spin" />
+            Guardando…
+          </template>
+          <template v-else-if="editor.saveStatus === 'saved'">
+            <Check :size="13" class="text-green-600" />
+            <span class="text-green-600">Guardado</span>
+          </template>
+          <template v-else>Se guarda automáticamente</template>
+        </div>
+
+        <button
+          v-if="publicUrl"
+          type="button"
+          class="hidden items-center gap-1.5 rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50 sm:inline-flex"
+          title="Copiar mi enlace público"
+          @click="copyPublicUrl"
+        >
+          <component :is="linkCopied ? Check : Copy" :size="13" />
+          {{ linkCopied ? 'Copiado' : 'Mi enlace' }}
+        </button>
+        <a
+          v-if="publicUrl && editor.profile?.is_published"
+          :href="publicUrl"
+          target="_blank"
+          rel="noopener"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs text-gray-700 hover:bg-gray-50"
+          title="Ver mi perfil público"
+        >
+          <ExternalLink :size="13" /> Ver
+        </a>
+
+        <button
+          type="button"
+          class="rounded-lg px-3 py-1.5 text-xs font-medium transition"
+          :class="
+            editor.profile?.is_published
+              ? 'bg-green-50 text-green-700 hover:bg-green-100'
+              : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+          "
+          :title="editor.profile?.is_published ? 'Tu perfil está visible' : 'Tu perfil no se está mostrando'"
+          @click="onTogglePublished"
+        >
+          {{ editor.profile?.is_published ? '● Publicado' : '● Sin publicar' }}
+        </button>
       </div>
     </header>
 
+    <p
+      v-if="editor.profile && !editor.profile.is_published"
+      class="shrink-0 border-b border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs text-amber-800"
+    >
+      Tu perfil está sin publicar: quien escanee tu QR no lo verá. Publícalo con el botón de arriba cuando esté listo.
+    </p>
+
+    <div class="md:hidden shrink-0 flex gap-1 bg-gray-100 mx-4 my-2 rounded-lg p-1">
+      <button
+        type="button"
+        class="flex-1 rounded-md py-1.5 text-xs font-medium transition"
+        :class="mobileView === 'edit' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'"
+        @click="mobileView = 'edit'"
+      >
+        Editar
+      </button>
+      <button
+        type="button"
+        class="flex-1 rounded-md py-1.5 text-xs font-medium transition"
+        :class="mobileView === 'preview' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'"
+        @click="mobileView = 'preview'"
+      >
+        Vista previa
+      </button>
+    </div>
+
     <div class="flex-1 flex flex-col md:flex-row min-h-0">
-    <div class="w-full md:w-96 shrink-0 border-b md:border-b-0 md:border-r border-gray-200 bg-white flex flex-col max-h-[45vh] md:max-h-none">
+    <div
+      class="w-full md:w-96 shrink-0 border-b md:border-b-0 md:border-r border-gray-200 bg-white flex-col flex-1 min-h-0 md:flex-none md:flex"
+      :class="mobileView === 'edit' ? 'flex' : 'hidden'"
+    >
       <div class="px-4 pt-3 border-b border-gray-100 flex gap-4">
         <button
           v-for="t in [{ id: 'content', label: 'Contenido' }, { id: 'design', label: 'Diseño' }, { id: 'template', label: 'Plantilla' }]"
@@ -261,7 +395,7 @@ onMounted(load)
             :uploading-menu-file-for="uploadingMenuFileFor"
             @add="onAddBlock"
             @update="onUpdateBlock"
-            @remove="onRemoveBlock"
+            @remove="onRemoveBlockConfirmed"
             @duplicate="onDuplicateBlock"
             @reorder="onReorder"
             @upload-menu-file="onUploadMenuFile"
@@ -278,7 +412,7 @@ onMounted(load)
         />
 
         <div v-else-if="tab === 'template'" class="space-y-3">
-          <div class="grid grid-cols-2 gap-3">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <button
               v-for="t in templates"
               :key="t.id"
@@ -321,7 +455,12 @@ onMounted(load)
                 </span>
               </div>
               <div class="p-2.5 bg-white">
-                <p class="text-sm font-medium text-gray-900">{{ t.name }}</p>
+                <div class="flex items-center gap-1.5">
+                  <p class="text-sm font-medium text-gray-900">{{ t.name }}</p>
+                  <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-gray-100 text-gray-500">
+                    {{ t.default_theme.layout === 'grid' ? 'Cuadrícula' : 'Lista' }}
+                  </span>
+                </div>
                 <p class="text-xs text-gray-500 mt-0.5 line-clamp-2">{{ t.description }}</p>
               </div>
             </button>
@@ -330,7 +469,10 @@ onMounted(load)
       </div>
     </div>
 
-    <div class="flex-1 bg-gray-100 flex items-center justify-center p-4 md:p-8 min-h-0">
+    <div
+      class="flex-1 bg-gray-100 items-center justify-center p-4 md:p-8 min-h-0 md:flex"
+      :class="mobileView === 'preview' ? 'flex' : 'hidden'"
+    >
       <div class="w-full max-w-[360px] h-full max-h-[640px] md:h-[720px] rounded-[2rem] border-8 border-gray-900 overflow-hidden shadow-xl bg-white">
         <ProfilePreview :profile="previewProfile" :theme="editor.theme" :blocks="editor.blocks" />
       </div>

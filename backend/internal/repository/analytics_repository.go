@@ -19,11 +19,39 @@ func NewAnalyticsRepository(db *sqlx.DB) *AnalyticsRepository {
 func (r *AnalyticsRepository) Create(ctx context.Context, e *models.AnalyticsEvent) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO analytics_events
-			(id, profile_id, event_type, block_id, device_type, os_name, browser_name, referrer)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, e.ProfileID, e.EventType, e.BlockID, e.DeviceType, e.OSName, e.BrowserName, e.Referrer,
+			(id, profile_id, event_type, block_id, print_card_id, qr_slot, device_type, os_name, browser_name, referrer)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, e.ProfileID, e.EventType, e.BlockID, e.PrintCardID, e.QRSlot, e.DeviceType, e.OSName, e.BrowserName, e.Referrer,
 	)
 	return err
+}
+
+// PrintCardScanCount is a single card's total scan count — cheap enough to
+// query directly wherever one card is already being fetched (Get/Update),
+// without needing the batched per-client version below.
+func (r *AnalyticsRepository) PrintCardScanCount(ctx context.Context, cardID string) (int, error) {
+	var count int
+	err := r.db.GetContext(ctx, &count, `
+		SELECT COUNT(*) FROM analytics_events WHERE print_card_id = ? AND event_type = 'QR_SCAN'`, cardID)
+	return count, err
+}
+
+type PrintCardScanRow struct {
+	PrintCardID string `db:"print_card_id"`
+	Count       int    `db:"count"`
+}
+
+// PrintCardScansByUser returns every one of a client's print cards' scan
+// counts in one query — used by the card list, to avoid N+1 queries.
+func (r *AnalyticsRepository) PrintCardScansByUser(ctx context.Context, userID string) ([]PrintCardScanRow, error) {
+	rows := []PrintCardScanRow{}
+	err := r.db.SelectContext(ctx, &rows, `
+		SELECT ae.print_card_id AS print_card_id, COUNT(*) AS count
+		FROM analytics_events ae
+		JOIN print_cards pc ON pc.id = ae.print_card_id
+		WHERE pc.user_id = ? AND ae.event_type = 'QR_SCAN'
+		GROUP BY ae.print_card_id`, userID)
+	return rows, err
 }
 
 type Summary struct {
@@ -95,6 +123,32 @@ func (r *AnalyticsRepository) BrowserBreakdown(ctx context.Context, profileID st
 		FROM analytics_events
 		WHERE profile_id = ? AND event_type = 'VIEW'
 		GROUP BY browser_name
+		ORDER BY count DESC`, profileID)
+	return rows, err
+}
+
+type BlockClickRow struct {
+	BlockID   string `db:"block_id" json:"block_id"`
+	Title     string `db:"title" json:"title"`
+	BlockType string `db:"block_type" json:"block_type"`
+	Count     int    `db:"count" json:"count"`
+}
+
+// BlockClicks ranks each block by how many BLOCK_CLICK events it received.
+// Deleted blocks (pb.title/block_type NULL from the LEFT JOIN) still show up
+// with their historical click count instead of silently vanishing.
+func (r *AnalyticsRepository) BlockClicks(ctx context.Context, profileID string) ([]BlockClickRow, error) {
+	rows := []BlockClickRow{}
+	err := r.db.SelectContext(ctx, &rows, `
+		SELECT
+			ae.block_id AS block_id,
+			COALESCE(pb.title, '') AS title,
+			COALESCE(pb.block_type, 'link') AS block_type,
+			COUNT(*) AS count
+		FROM analytics_events ae
+		LEFT JOIN profile_blocks pb ON pb.id = ae.block_id
+		WHERE ae.profile_id = ? AND ae.event_type = 'BLOCK_CLICK' AND ae.block_id IS NOT NULL
+		GROUP BY ae.block_id, pb.title, pb.block_type
 		ORDER BY count DESC`, profileID)
 	return rows, err
 }

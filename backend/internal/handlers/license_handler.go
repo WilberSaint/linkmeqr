@@ -17,11 +17,12 @@ import (
 type LicenseHandler struct {
 	licenseSvc *services.LicenseService
 	licenses   *repository.LicenseRepository
+	users      *repository.UserRepository
 	audit      *services.AuditService
 }
 
-func NewLicenseHandler(licenseSvc *services.LicenseService, licenses *repository.LicenseRepository, audit *services.AuditService) *LicenseHandler {
-	return &LicenseHandler{licenseSvc: licenseSvc, licenses: licenses, audit: audit}
+func NewLicenseHandler(licenseSvc *services.LicenseService, licenses *repository.LicenseRepository, users *repository.UserRepository, audit *services.AuditService) *LicenseHandler {
+	return &LicenseHandler{licenseSvc: licenseSvc, licenses: licenses, users: users, audit: audit}
 }
 
 type activateRequest struct {
@@ -42,15 +43,18 @@ func (h *LicenseHandler) Activate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrCodeNotFound):
-			utils.Error(w, http.StatusNotFound, "code_not_found", "Activation code not found.")
+			utils.Error(w, http.StatusNotFound, "code_not_found", "No encontramos ese código de activación.")
 		case errors.Is(err, services.ErrCodeNotUsable):
-			utils.Error(w, http.StatusConflict, "code_not_usable", "This code has already been used or revoked.")
+			utils.Error(w, http.StatusConflict, "code_not_usable", "Este código ya se usó o fue revocado.")
+		case errors.Is(err, services.ErrCodeNotYours):
+			utils.Error(w, http.StatusForbidden, "code_not_yours", "Este código está reservado para otra cuenta.")
 		default:
 			utils.Error(w, http.StatusInternalServerError, "internal_error", "Could not activate code.")
 		}
 		return
 	}
 
+	h.audit.Log(r.Context(), userID, "activate_license", "license", license.ID, r.RemoteAddr, nil)
 	utils.JSON(w, http.StatusOK, license)
 }
 
@@ -132,6 +136,17 @@ func (h *LicenseHandler) GenerateBatch(w http.ResponseWriter, r *http.Request) {
 	utils.JSON(w, http.StatusCreated, codes)
 }
 
+// codeResponse mirrors models.ActivationCode but adds the resolved name/email
+// of whoever the code is assigned to or was used by, so the admin panel can
+// show which client owns each code without a second round trip.
+type codeResponse struct {
+	models.ActivationCode
+	AssignedToName  *string `json:"assigned_to_name"`
+	AssignedToEmail *string `json:"assigned_to_email"`
+	UsedByName      *string `json:"used_by_name"`
+	UsedByEmail     *string `json:"used_by_email"`
+}
+
 // ListCodes handles GET /api/admin/licenses/codes (ADMIN).
 func (h *LicenseHandler) ListCodes(w http.ResponseWriter, r *http.Request) {
 	filter := repository.ListCodesFilter{
@@ -144,7 +159,48 @@ func (h *LicenseHandler) ListCodes(w http.ResponseWriter, r *http.Request) {
 		utils.Error(w, http.StatusInternalServerError, "internal_error", "Could not list codes.")
 		return
 	}
-	utils.JSON(w, http.StatusOK, codes)
+
+	idSet := map[string]struct{}{}
+	for _, c := range codes {
+		if c.AssignedUserID != nil {
+			idSet[*c.AssignedUserID] = struct{}{}
+		}
+		if c.UsedByUserID != nil {
+			idSet[*c.UsedByUserID] = struct{}{}
+		}
+	}
+	ids := make([]string, 0, len(idSet))
+	for id := range idSet {
+		ids = append(ids, id)
+	}
+
+	names := map[string]models.User{}
+	if len(ids) > 0 {
+		users, err := h.users.ListByIDs(r.Context(), ids)
+		if err == nil {
+			for _, u := range users {
+				names[u.ID] = u
+			}
+		}
+	}
+
+	out := make([]codeResponse, len(codes))
+	for i, c := range codes {
+		resp := codeResponse{ActivationCode: c}
+		if c.AssignedUserID != nil {
+			if u, ok := names[*c.AssignedUserID]; ok {
+				resp.AssignedToName, resp.AssignedToEmail = &u.FullName, &u.Email
+			}
+		}
+		if c.UsedByUserID != nil {
+			if u, ok := names[*c.UsedByUserID]; ok {
+				resp.UsedByName, resp.UsedByEmail = &u.FullName, &u.Email
+			}
+		}
+		out[i] = resp
+	}
+
+	utils.JSON(w, http.StatusOK, out)
 }
 
 type adminActivateRequest struct {
@@ -177,6 +233,34 @@ func (h *LicenseHandler) AdminActivate(w http.ResponseWriter, r *http.Request) {
 	})
 
 	utils.JSON(w, http.StatusOK, license)
+}
+
+type assignCodeRequest struct {
+	// Null releases the reservation and puts the code back in the pool.
+	UserID *string `json:"user_id"`
+}
+
+// AssignCode handles POST /api/admin/licenses/codes/:id/assign (ADMIN) —
+// reserving an unused code for one client so only they can redeem it.
+func (h *LicenseHandler) AssignCode(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req assignCodeRequest
+	if err := validator.Decode(r, &req); err != nil {
+		utils.Error(w, http.StatusBadRequest, "bad_request", "Cuerpo de la petición inválido.")
+		return
+	}
+	if err := h.licenseSvc.AssignCode(r.Context(), id, req.UserID); err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			utils.Error(w, http.StatusConflict, "code_not_assignable", "Sólo se puede reservar un código que siga sin usar.")
+			return
+		}
+		utils.Error(w, http.StatusInternalServerError, "internal_error", "No se pudo reservar el código.")
+		return
+	}
+
+	adminID := middleware.UserIDFromContext(r.Context())
+	h.audit.Log(r.Context(), adminID, "assign_activation_code", "activation_code", id, r.RemoteAddr, map[string]any{"user_id": req.UserID})
+	utils.JSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // RevokeCode handles POST /api/admin/licenses/codes/:id/revoke (ADMIN).

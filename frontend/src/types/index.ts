@@ -38,6 +38,10 @@ export interface ActivationCode {
   created_at: string
   activated_at: string | null
   expires_at: string | null
+  assigned_to_name: string | null
+  assigned_to_email: string | null
+  used_by_name: string | null
+  used_by_email: string | null
 }
 
 export interface LicenseActivation {
@@ -66,6 +70,11 @@ export type BlockType =
   | 'video'
   | 'text'
   | 'link'
+  | 'google_review'
+  | 'gallery'
+  | 'hours'
+  | 'testimonials'
+  | 'map'
 
 export interface ProfileBlock {
   id: string
@@ -99,6 +108,7 @@ export interface ProfileTheme {
   font_family: string
   button_style: 'rounded' | 'square' | 'pill' | 'outline'
   button_shadow: boolean
+  layout: 'list' | 'grid'
 }
 
 export interface Profile {
@@ -122,6 +132,9 @@ export interface PublicProfileResponse {
   blocks?: ProfileBlock[]
 }
 
+export type QrPresetIcon = 'coffee' | 'heart' | 'matcha' | 'star' | 'gift'
+export type QrFrameShape = 'heart' | 'coffee' | 'matcha' | 'circle' | 'star' | 'pizza' | 'flower' | 'cone' | 'custom_logo'
+
 export interface QrCode {
   profile_id: string
   foreground_color: string
@@ -129,6 +142,12 @@ export interface QrCode {
   module_style: 'square' | 'dots' | 'rounded'
   eye_style: 'square' | 'circular' | 'rounded'
   logo_media_id: string | null
+  logo_url: string | null
+  logo_style: 'color' | 'monochrome' | 'dots'
+  eye_color_from_logo: boolean
+  preset_icon: QrPresetIcon | null
+  frame_shape: QrFrameShape | null
+  shape_fill: boolean
   error_correction: 'L' | 'M' | 'Q' | 'H'
   has_scannability_warning: boolean
 }
@@ -138,8 +157,9 @@ export interface Template {
   slug: string
   name: string
   description: string | null
-  preview_image: string | null
   default_theme: ProfileTheme
+  is_active: boolean
+  sort_order: number
 }
 
 export interface MeResponse extends User {

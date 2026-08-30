@@ -105,3 +105,25 @@ func (r *ActivationCodeRepository) List(ctx context.Context, f ListCodesFilter) 
 	err := r.db.SelectContext(ctx, &codes, query, args...)
 	return codes, err
 }
+
+// Assign reserves an unused code for one specific client, or clears the
+// reservation when userID is nil.
+//
+// It only ever touches UNUSED codes: reassigning one that has already been
+// redeemed would rewrite history, and the WHERE clause is what makes that
+// impossible rather than merely discouraged.
+func (r *ActivationCodeRepository) Assign(ctx context.Context, id string, userID *string) error {
+	res, err := r.db.ExecContext(ctx,
+		`UPDATE activation_codes SET assigned_user_id = ? WHERE id = ? AND status = 'UNUSED'`, userID, id)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}

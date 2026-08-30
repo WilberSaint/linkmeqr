@@ -16,6 +16,11 @@ export const BLOCK_LABELS: Record<BlockType, string> = {
   video: 'Video',
   text: 'Texto',
   link: 'Enlace personalizado',
+  google_review: 'Reseña en Google',
+  gallery: 'Galería de fotos',
+  hours: 'Horario de atención',
+  testimonials: 'Testimonios',
+  map: 'Mapa',
 }
 
 export function blockLabel(type: BlockType): string {

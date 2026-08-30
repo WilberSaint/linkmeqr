@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import {
   Phone, Mail, MapPin, Globe, Menu as MenuIcon, ShoppingBag,
-  Image as ImageIcon, Video, Type, Link as LinkIcon,
+  Image as ImageIcon, Video, Type, Link as LinkIcon, Clock, Quote, Map as MapIcon,
 } from '@lucide/vue'
 import type { ProfileBlock, ProfileTheme } from '@/types'
 import { blockLabel } from '@/composables/blockLabels'
@@ -11,8 +11,15 @@ import FacebookIcon from '@/components/icons/FacebookIcon.vue'
 import WhatsappIcon from '@/components/icons/WhatsappIcon.vue'
 import TiktokIcon from '@/components/icons/TiktokIcon.vue'
 import YoutubeIcon from '@/components/icons/YoutubeIcon.vue'
+import GalleryBlock from './blocks/GalleryBlock.vue'
+import HoursBlock from './blocks/HoursBlock.vue'
+import TestimonialsBlock from './blocks/TestimonialsBlock.vue'
+import MapBlock from './blocks/MapBlock.vue'
+import GoogleReviewBlock from './blocks/GoogleReviewBlock.vue'
 
-const props = defineProps<{ block: ProfileBlock; theme: ProfileTheme | null }>()
+const props = withDefaults(defineProps<{ block: ProfileBlock; theme: ProfileTheme | null; card?: boolean }>(), {
+  card: false,
+})
 const emit = defineEmits<{ click: [] }>()
 
 // Brand-accurate SVG icon + its official background color, used when the
@@ -36,6 +43,10 @@ const genericIconMap: Record<string, unknown> = {
   video: Video,
   text: Type,
   link: LinkIcon,
+  gallery: ImageIcon,
+  hours: Clock,
+  testimonials: Quote,
+  map: MapIcon,
 }
 
 const isBrandBlock = computed(() => props.block.block_type in brandBlocks)
@@ -86,17 +97,35 @@ const displayLabel = computed(() => props.block.title || blockLabel(props.block.
     v-if="block.block_type === 'text'"
     type="button"
     class="w-full text-left px-4 py-3 text-sm"
+    :class="{ 'col-span-2': card }"
     :style="{ color: theme?.text_color }"
   >
     <p class="font-medium">{{ block.title }}</p>
     <p v-if="block.description" class="text-sm opacity-80 mt-0.5">{{ block.description }}</p>
   </button>
 
+  <div v-else-if="block.block_type === 'google_review'" class="w-full" :class="{ 'col-span-2': card }">
+    <GoogleReviewBlock :block="block" :theme="theme" @click="emit('click')" />
+  </div>
+
+  <div v-else-if="['gallery', 'hours', 'testimonials', 'map'].includes(block.block_type)" class="w-full" :class="{ 'col-span-2': card }">
+    <p v-if="block.title" class="text-xs font-semibold uppercase tracking-wide opacity-60 mb-1.5" :style="{ color: theme?.text_color }">
+      {{ block.title }}
+    </p>
+    <GalleryBlock v-if="block.block_type === 'gallery'" :content="block.content" :theme="theme" />
+    <HoursBlock v-else-if="block.block_type === 'hours'" :content="block.content" :theme="theme" />
+    <TestimonialsBlock v-else-if="block.block_type === 'testimonials'" :content="block.content" :theme="theme" />
+    <MapBlock v-else-if="block.block_type === 'map'" :content="block.content" :theme="theme" />
+  </div>
+
   <button
     v-else
     type="button"
-    class="relative w-full flex items-center gap-3 px-4 py-3.5 shadow-sm transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-md hover:brightness-105 active:translate-y-0 active:scale-[0.98] active:shadow-sm active:brightness-95"
-    :class="buttonStyleClass"
+    class="relative shadow-sm transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-md hover:brightness-105 active:translate-y-0 active:scale-[0.98] active:shadow-sm active:brightness-95"
+    :class="[
+      buttonStyleClass,
+      card ? 'flex flex-col items-center justify-center gap-2 p-4 aspect-square text-center' : 'w-full flex items-center gap-3 px-4 py-3.5',
+    ]"
     :style="{
       backgroundColor: theme?.button_style === 'outline' ? 'transparent' : buttonColor,
       borderColor: buttonColor,
@@ -105,11 +134,12 @@ const displayLabel = computed(() => props.block.title || blockLabel(props.block.
     @click="onClick"
   >
     <span
-      class="flex items-center justify-center w-9 h-9 rounded-full shrink-0"
+      class="flex items-center justify-center rounded-full shrink-0"
+      :class="card ? 'w-10 h-10' : 'w-9 h-9'"
       :style="{ backgroundColor: theme?.button_style === 'outline' ? 'transparent' : 'rgba(255,255,255,0.2)' }"
     >
-      <component :is="icon" :size="22" color="currentColor" />
+      <component :is="icon" :size="card ? 20 : 22" color="currentColor" />
     </span>
-    <span class="text-sm font-medium flex-1 text-center pr-9">{{ displayLabel }}</span>
+    <span class="text-sm font-medium" :class="card ? 'line-clamp-2' : 'flex-1 text-center pr-9'">{{ displayLabel }}</span>
   </button>
 </template>

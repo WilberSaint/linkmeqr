@@ -20,6 +20,12 @@ const router = createRouter({
       component: () => import('@/views/public/ProfilePublicView.vue'),
       meta: { public: true },
     },
+    {
+      path: '/loyalty/:token',
+      name: 'loyalty-card',
+      component: () => import('@/views/public/LoyaltyCardView.vue'),
+      meta: { public: true },
+    },
 
     // --- Client editor (full-screen, no sidebar) ---
     {
@@ -36,9 +42,9 @@ const router = createRouter({
       meta: { requiresRole: 'CLIENT' },
       children: [
         { path: '', name: 'client-dashboard', component: () => import('@/views/client/DashboardView.vue') },
-        { path: 'qr', name: 'client-qr', component: () => import('@/views/client/QrView.vue') },
         { path: 'license', name: 'client-license', component: () => import('@/views/client/LicenseView.vue') },
-        { path: 'stats', name: 'client-stats', component: () => import('@/views/client/StatsView.vue') },
+        { path: 'stats', redirect: { name: 'client-dashboard' } },
+        { path: 'loyalty', name: 'client-loyalty', component: () => import('@/views/client/LoyaltyView.vue') },
       ],
     },
 
@@ -51,6 +57,7 @@ const router = createRouter({
         { path: '', name: 'admin-dashboard', component: () => import('@/views/admin/DashboardView.vue') },
         { path: 'clients', name: 'admin-clients', component: () => import('@/views/admin/ClientsView.vue') },
         { path: 'clients/:id', name: 'admin-client-detail', component: () => import('@/views/admin/ClientDetailView.vue') },
+        { path: 'clients/:id/print-cards', name: 'admin-print-cards', component: () => import('@/views/admin/PrintCardsView.vue') },
         { path: 'licenses', name: 'admin-licenses', component: () => import('@/views/admin/LicensesView.vue') },
         { path: 'templates', name: 'admin-templates', component: () => import('@/views/admin/TemplatesView.vue') },
         { path: 'audit-logs', name: 'admin-audit', component: () => import('@/views/admin/AuditLogsView.vue') },

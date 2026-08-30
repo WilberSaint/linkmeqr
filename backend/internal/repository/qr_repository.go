@@ -34,10 +34,10 @@ func (r *QRRepository) Create(ctx context.Context, q *models.QRCode) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO qr_codes
 			(id, profile_id, foreground_color, background_color, module_style, eye_style,
-			 logo_media_id, error_correction, has_scannability_warning)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			 logo_media_id, logo_style, eye_color_from_logo, preset_icon, frame_shape, shape_fill, error_correction, has_scannability_warning)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		q.ID, q.ProfileID, q.ForegroundColor, q.BackgroundColor, q.ModuleStyle, q.EyeStyle,
-		q.LogoMediaID, q.ErrorCorrection, q.HasScannabilityWarning,
+		q.LogoMediaID, q.LogoStyle, q.EyeColorFromLogo, q.PresetIcon, q.FrameShape, q.ShapeFill, q.ErrorCorrection, q.HasScannabilityWarning,
 	)
 	return err
 }
@@ -46,10 +46,10 @@ func (r *QRRepository) Update(ctx context.Context, q *models.QRCode) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE qr_codes SET
 			foreground_color = ?, background_color = ?, module_style = ?, eye_style = ?,
-			logo_media_id = ?, error_correction = ?, has_scannability_warning = ?
+			logo_media_id = ?, logo_style = ?, eye_color_from_logo = ?, preset_icon = ?, frame_shape = ?, shape_fill = ?, error_correction = ?, has_scannability_warning = ?
 		WHERE profile_id = ?`,
 		q.ForegroundColor, q.BackgroundColor, q.ModuleStyle, q.EyeStyle,
-		q.LogoMediaID, q.ErrorCorrection, q.HasScannabilityWarning, q.ProfileID,
+		q.LogoMediaID, q.LogoStyle, q.EyeColorFromLogo, q.PresetIcon, q.FrameShape, q.ShapeFill, q.ErrorCorrection, q.HasScannabilityWarning, q.ProfileID,
 	)
 	return err
 }

@@ -1,11 +1,28 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import type { ActivationCode, DurationType } from '@/types'
+/**
+ * Activation codes.
+ *
+ * The screen now says out loud how a client actually gets a licence, because
+ * the two routes are not obvious from a list of codes: either you activate one
+ * directly from the client's own row, or you generate a code and the client
+ * redeems it. And a code is a bearer token unless you reserve it for someone —
+ * that distinction was modelled in the database and shown in the table, but
+ * there was no way to actually set it.
+ */
+import { computed, onMounted, ref } from 'vue'
+import { Ticket, Copy, Check } from '@lucide/vue'
+
+import type { ActivationCode, ClientWithLicense, DurationType } from '@/types'
 import * as licensesApi from '@/api/licenses'
+import * as clientsApi from '@/api/clients'
+import { codeStatusLabel } from '@/composables/licenseLabels'
 import AppButton from '@/components/common/AppButton.vue'
 import AppBadge from '@/components/common/AppBadge.vue'
+import AppPageHeader from '@/components/common/AppPageHeader.vue'
+import AppEmptyState from '@/components/common/AppEmptyState.vue'
 
 const codes = ref<ActivationCode[]>([])
+const clients = ref<ClientWithLicense[]>([])
 const loading = ref(false)
 const statusFilter = ref('')
 
@@ -17,19 +34,17 @@ const durationOptions: { value: DurationType; label: string }[] = [
   { value: 'CUSTOM', label: 'Personalizado' },
 ]
 
-const singleForm = ref<{ duration_type: DurationType; custom_days: number }>({
+const form = ref<{ duration_type: DurationType; custom_days: number; quantity: number; assign_to: string }>({
   duration_type: '1_MONTH',
   custom_days: 30,
-})
-const batchForm = ref<{ duration_type: DurationType; custom_days: number; quantity: number }>({
-  duration_type: '1_MONTH',
-  custom_days: 30,
-  quantity: 10,
+  quantity: 1,
+  assign_to: '',
 })
 
 const lastGenerated = ref<ActivationCode[]>([])
 const generating = ref(false)
 const error = ref('')
+const copied = ref<string | null>(null)
 
 async function load() {
   loading.value = true
@@ -40,12 +55,35 @@ async function load() {
   }
 }
 
-async function onGenerateSingle() {
+async function loadClients() {
+  try {
+    clients.value = await clientsApi.listClients()
+  } catch {
+    clients.value = []
+  }
+}
+
+/**
+ * One form for both cases: a quantity of 1 is a single code, more is a batch.
+ * Two near-identical side-by-side forms only made the reader compare them to
+ * find the difference.
+ */
+async function onGenerate() {
   error.value = ''
   generating.value = true
   try {
-    const code = await licensesApi.generateCode(singleForm.value)
-    lastGenerated.value = [code]
+    const payload = { duration_type: form.value.duration_type, custom_days: form.value.custom_days }
+    const result =
+      form.value.quantity > 1
+        ? await licensesApi.generateBatch({ ...payload, quantity: form.value.quantity })
+        : [await licensesApi.generateCode(payload)]
+
+    // Reserving on creation is the common case for a code made for one client;
+    // a batch is left unassigned, since its whole point is being handed out.
+    if (form.value.assign_to && result.length === 1) {
+      await licensesApi.assignCode(result[0].id, form.value.assign_to)
+    }
+    lastGenerated.value = result
     await load()
   } catch {
     error.value = 'No se pudo generar el código.'
@@ -54,23 +92,29 @@ async function onGenerateSingle() {
   }
 }
 
-async function onGenerateBatch() {
-  error.value = ''
-  generating.value = true
+async function onAssign(code: ActivationCode, userId: string) {
   try {
-    const codesResult = await licensesApi.generateBatch(batchForm.value)
-    lastGenerated.value = codesResult
+    await licensesApi.assignCode(code.id, userId || null)
     await load()
   } catch {
-    error.value = 'No se pudo generar el lote.'
-  } finally {
-    generating.value = false
+    error.value = 'No se pudo reservar el código.'
   }
 }
 
 async function onRevoke(id: string) {
+  if (!confirm('¿Revocar este código? Dejará de poder canjearse.')) return
   await licensesApi.revokeCode(id)
   await load()
+}
+
+async function copy(text: string, key: string) {
+  await navigator.clipboard.writeText(text)
+  copied.value = key
+  setTimeout(() => (copied.value = null), 1500)
+}
+
+function copyAll() {
+  copy(lastGenerated.value.map((c) => c.code).join('\n'), 'all')
 }
 
 function statusTone(status: string) {
@@ -79,103 +123,186 @@ function statusTone(status: string) {
   return 'gray'
 }
 
-onMounted(load)
+const unusedCount = computed(() => codes.value.filter((c) => c.status === 'UNUSED').length)
+
+onMounted(() => {
+  load()
+  loadClients()
+})
 </script>
 
 <template>
-  <div class="p-6 max-w-5xl space-y-6">
-    <h1 class="text-lg font-semibold text-gray-900">Licencias y códigos de activación</h1>
+  <div class="max-w-5xl space-y-6 p-4 sm:p-6">
+    <AppPageHeader
+      title="Licencias y códigos"
+      description="Un código de activación es un vale por cierto tiempo de licencia. El cliente lo canjea desde su panel y su licencia se extiende."
+    />
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <section class="bg-white border border-gray-200 rounded-xl p-5">
-        <h2 class="text-sm font-semibold text-gray-900 mb-3">Generar código individual</h2>
-        <form class="space-y-3" @submit.prevent="onGenerateSingle">
-          <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Duración</label>
-            <select v-model="singleForm.duration_type" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
-              <option v-for="d in durationOptions" :key="d.value" :value="d.value">{{ d.label }}</option>
-            </select>
-          </div>
-          <div v-if="singleForm.duration_type === 'CUSTOM'">
-            <label class="block text-xs font-medium text-gray-700 mb-1">Días</label>
-            <input v-model.number="singleForm.custom_days" type="number" min="1" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-          </div>
-          <AppButton type="submit" :disabled="generating">Generar código</AppButton>
-        </form>
-      </section>
+    <!-- Generate -->
+    <section class="rounded-xl border border-gray-200 bg-white p-5">
+      <h2 class="mb-4 text-sm font-semibold text-gray-900">Generar códigos</h2>
+      <form class="grid gap-4 sm:grid-cols-4" @submit.prevent="onGenerate">
+        <label class="block">
+          <span class="mb-1 block text-xs font-medium text-gray-600">Duración</span>
+          <select v-model="form.duration_type" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
+            <option v-for="d in durationOptions" :key="d.value" :value="d.value">{{ d.label }}</option>
+          </select>
+        </label>
 
-      <section class="bg-white border border-gray-200 rounded-xl p-5">
-        <h2 class="text-sm font-semibold text-gray-900 mb-3">Generar por lote</h2>
-        <form class="space-y-3" @submit.prevent="onGenerateBatch">
-          <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Duración</label>
-            <select v-model="batchForm.duration_type" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm">
-              <option v-for="d in durationOptions" :key="d.value" :value="d.value">{{ d.label }}</option>
-            </select>
-          </div>
-          <div v-if="batchForm.duration_type === 'CUSTOM'">
-            <label class="block text-xs font-medium text-gray-700 mb-1">Días</label>
-            <input v-model.number="batchForm.custom_days" type="number" min="1" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-          </div>
-          <div>
-            <label class="block text-xs font-medium text-gray-700 mb-1">Cantidad</label>
-            <input v-model.number="batchForm.quantity" type="number" min="1" max="5000" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm" />
-          </div>
-          <AppButton type="submit" :disabled="generating">Generar lote</AppButton>
-        </form>
-      </section>
-    </div>
+        <label v-if="form.duration_type === 'CUSTOM'" class="block">
+          <span class="mb-1 block text-xs font-medium text-gray-600">Días</span>
+          <input
+            v-model.number="form.custom_days"
+            type="number"
+            min="1"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          />
+        </label>
+
+        <label class="block">
+          <span class="mb-1 block text-xs font-medium text-gray-600">Cantidad</span>
+          <input
+            v-model.number="form.quantity"
+            type="number"
+            min="1"
+            max="5000"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+          />
+        </label>
+
+        <label class="block">
+          <span class="mb-1 block text-xs font-medium text-gray-600">Reservar para</span>
+          <select
+            v-model="form.assign_to"
+            :disabled="form.quantity > 1"
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-400"
+          >
+            <option value="">Cualquiera (al portador)</option>
+            <option v-for="c in clients" :key="c.id" :value="c.id">{{ c.full_name }}</option>
+          </select>
+          <span v-if="form.quantity > 1" class="mt-1 block text-xs text-gray-400">
+            Un lote se reparte, así que va sin reservar.
+          </span>
+        </label>
+
+        <div class="flex items-end sm:col-span-4">
+          <AppButton type="submit" :disabled="generating">
+            {{ generating ? 'Generando…' : form.quantity > 1 ? `Generar ${form.quantity} códigos` : 'Generar código' }}
+          </AppButton>
+        </div>
+      </form>
+    </section>
 
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
 
-    <section v-if="lastGenerated.length" class="bg-indigo-50 border border-indigo-100 rounded-xl p-5">
-      <h2 class="text-sm font-semibold text-indigo-900 mb-2">
-        Códigos generados ({{ lastGenerated.length }})
-      </h2>
+    <section v-if="lastGenerated.length" class="rounded-xl border border-green-200 bg-green-50 p-5">
+      <div class="mb-3 flex items-center justify-between gap-3">
+        <h2 class="text-sm font-semibold text-green-900">
+          Listo — {{ lastGenerated.length }} {{ lastGenerated.length === 1 ? 'código generado' : 'códigos generados' }}
+        </h2>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-green-300 bg-white px-3 py-1.5 text-xs font-medium text-green-800 hover:bg-green-100"
+          @click="copyAll"
+        >
+          <component :is="copied === 'all' ? Check : Copy" :size="13" />
+          {{ copied === 'all' ? 'Copiado' : 'Copiar todos' }}
+        </button>
+      </div>
       <div class="flex flex-wrap gap-2">
-        <code
+        <button
           v-for="c in lastGenerated"
           :key="c.id"
-          class="bg-white border border-indigo-200 rounded px-2 py-1 text-xs text-indigo-900"
+          type="button"
+          class="rounded border border-green-200 bg-white px-2.5 py-1.5 font-mono text-xs text-green-900 hover:border-green-400"
+          :title="'Copiar ' + c.code"
+          @click="copy(c.code, c.id)"
         >
-          {{ c.code }}
-        </code>
+          {{ copied === c.id ? '¡Copiado!' : c.code }}
+        </button>
       </div>
     </section>
 
-    <section class="bg-white border border-gray-200 rounded-xl overflow-hidden">
-      <div class="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-        <h2 class="text-sm font-semibold text-gray-900">Todos los códigos</h2>
-        <select v-model="statusFilter" class="rounded-lg border border-gray-300 px-2 py-1 text-xs" @change="load">
+    <!-- All codes -->
+    <section class="overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <div class="flex items-center justify-between gap-3 border-b border-gray-100 px-4 py-3">
+        <h2 class="text-sm font-semibold text-gray-900">
+          Todos los códigos
+          <span class="ml-1 font-normal text-gray-400">· {{ unusedCount }} sin usar</span>
+        </h2>
+        <select
+          v-model="statusFilter"
+          class="rounded-lg border border-gray-300 px-2.5 py-1.5 text-xs"
+          @change="load"
+        >
           <option value="">Todos</option>
           <option value="UNUSED">Sin usar</option>
           <option value="USED">Usados</option>
           <option value="REVOKED">Revocados</option>
         </select>
       </div>
-      <table class="w-full text-sm">
-        <thead class="bg-gray-50 text-gray-500 text-xs uppercase">
-          <tr>
-            <th class="text-left px-4 py-2 font-medium">Código</th>
-            <th class="text-left px-4 py-2 font-medium">Duración</th>
-            <th class="text-left px-4 py-2 font-medium">Estado</th>
-            <th class="text-right px-4 py-2 font-medium">Acciones</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-          <tr v-for="c in codes" :key="c.id">
-            <td class="px-4 py-2"><code class="text-xs">{{ c.code }}</code></td>
-            <td class="px-4 py-2 text-gray-600">{{ c.duration_days }} días</td>
-            <td class="px-4 py-2"><AppBadge :tone="statusTone(c.status)">{{ c.status }}</AppBadge></td>
-            <td class="px-4 py-2 text-right">
-              <AppButton v-if="c.status === 'UNUSED'" variant="ghost" @click="onRevoke(c.id)">Revocar</AppButton>
-            </td>
-          </tr>
-          <tr v-if="!loading && codes.length === 0">
-            <td colspan="4" class="px-4 py-8 text-center text-gray-400">Sin códigos todavía.</td>
-          </tr>
-        </tbody>
-      </table>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+            <tr>
+              <th class="whitespace-nowrap px-4 py-2.5 text-left font-medium">Código</th>
+              <th class="whitespace-nowrap px-4 py-2.5 text-left font-medium">Duración</th>
+              <th class="whitespace-nowrap px-4 py-2.5 text-left font-medium">Estado</th>
+              <th class="whitespace-nowrap px-4 py-2.5 text-left font-medium">Cliente</th>
+              <th class="whitespace-nowrap px-4 py-2.5 text-right font-medium">Acciones</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-gray-100">
+            <tr v-for="c in codes" :key="c.id" class="hover:bg-gray-50">
+              <td class="whitespace-nowrap px-4 py-2.5">
+                <button
+                  type="button"
+                  class="font-mono text-xs text-gray-900 hover:text-indigo-600"
+                  :title="'Copiar ' + c.code"
+                  @click="copy(c.code, c.id)"
+                >
+                  {{ copied === c.id ? '¡Copiado!' : c.code }}
+                </button>
+              </td>
+              <td class="whitespace-nowrap px-4 py-2.5 text-gray-600">{{ c.duration_days }} días</td>
+              <td class="whitespace-nowrap px-4 py-2.5">
+                <AppBadge :tone="statusTone(c.status)">{{ codeStatusLabel(c.status) }}</AppBadge>
+              </td>
+              <td class="whitespace-nowrap px-4 py-2.5">
+                <!-- Once redeemed the owner is a fact; before that it is a choice. -->
+                <RouterLink
+                  v-if="c.used_by_user_id && c.used_by_name"
+                  :to="{ name: 'admin-client-detail', params: { id: c.used_by_user_id } }"
+                  class="text-indigo-600 hover:underline"
+                >
+                  {{ c.used_by_name }}
+                </RouterLink>
+                <select
+                  v-else-if="c.status === 'UNUSED'"
+                  :value="c.assigned_user_id ?? ''"
+                  class="rounded-lg border border-gray-200 px-2 py-1 text-xs"
+                  @change="onAssign(c, ($event.target as HTMLSelectElement).value)"
+                >
+                  <option value="">Al portador</option>
+                  <option v-for="cl in clients" :key="cl.id" :value="cl.id">{{ cl.full_name }}</option>
+                </select>
+                <span v-else class="text-gray-400">—</span>
+              </td>
+              <td class="whitespace-nowrap px-4 py-2.5 text-right">
+                <AppButton v-if="c.status === 'UNUSED'" variant="ghost" @click="onRevoke(c.id)">Revocar</AppButton>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <AppEmptyState
+        v-if="!loading && codes.length === 0"
+        :icon="Ticket"
+        title="Sin códigos todavía"
+        description="Genera uno arriba y pásaselo a tu cliente, o activa su licencia directamente desde la pantalla de Clientes."
+      />
     </section>
   </div>
 </template>

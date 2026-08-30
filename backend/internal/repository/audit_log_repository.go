@@ -28,6 +28,8 @@ func (r *AuditLogRepository) Create(ctx context.Context, l *models.AuditLog) err
 type ListAuditFilter struct {
 	EntityType string
 	ActorID    string
+	Action     string
+	Limit      int
 }
 
 func (r *AuditLogRepository) List(ctx context.Context, f ListAuditFilter) ([]models.AuditLog, error) {
@@ -42,7 +44,16 @@ func (r *AuditLogRepository) List(ctx context.Context, f ListAuditFilter) ([]mod
 		query += ` AND actor_user_id = ?`
 		args = append(args, f.ActorID)
 	}
-	query += ` ORDER BY created_at DESC LIMIT 500`
+	if f.Action != "" {
+		query += ` AND action = ?`
+		args = append(args, f.Action)
+	}
+	limit := f.Limit
+	if limit <= 0 || limit > 500 {
+		limit = 500
+	}
+	query += ` ORDER BY created_at DESC LIMIT ?`
+	args = append(args, limit)
 
 	logs := []models.AuditLog{}
 	err := r.db.SelectContext(ctx, &logs, query, args...)

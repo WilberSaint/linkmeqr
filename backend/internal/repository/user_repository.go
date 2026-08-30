@@ -68,6 +68,22 @@ func (r *UserRepository) List(ctx context.Context, role models.Role) ([]models.U
 	return users, err
 }
 
+// ListByIDs batch-resolves users for id->name/email lookups (e.g. showing
+// which client owns an activation code). Returns an empty slice for an empty input.
+func (r *UserRepository) ListByIDs(ctx context.Context, ids []string) ([]models.User, error) {
+	users := []models.User{}
+	if len(ids) == 0 {
+		return users, nil
+	}
+	query, args, err := sqlx.In(`SELECT * FROM users WHERE id IN (?)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	query = r.db.Rebind(query)
+	err = r.db.SelectContext(ctx, &users, query, args...)
+	return users, err
+}
+
 func (r *UserRepository) SetActive(ctx context.Context, id string, active bool) error {
 	_, err := r.db.ExecContext(ctx, `UPDATE users SET is_active = ? WHERE id = ?`, active, id)
 	return err

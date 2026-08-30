@@ -21,6 +21,11 @@ type Config struct {
 	FrontendOrigins  []string
 	PublicBaseURL    string
 	MediaStoragePath string
+
+	GoogleWalletIssuerID            string
+	GoogleWalletServiceAccountEmail string
+	GoogleWalletPrivateKey          string
+	GoogleWalletReviewStatus        string
 }
 
 func Load() (*Config, error) {
@@ -38,6 +43,14 @@ func Load() (*Config, error) {
 		FrontendOrigins:  splitCSV(getEnv("FRONTEND_ORIGIN", "http://localhost:5173")),
 		PublicBaseURL:    getEnv("PUBLIC_BASE_URL", "http://localhost:5173"),
 		MediaStoragePath: getEnv("MEDIA_STORAGE_PATH", "./media"),
+
+		// Google Wallet: all optional — the loyalty "Add to Google Wallet"
+		// button simply stays hidden until an Issuer account + service
+		// account key are configured. See .env.example for setup notes.
+		GoogleWalletIssuerID:            getEnv("GOOGLE_WALLET_ISSUER_ID", ""),
+		GoogleWalletServiceAccountEmail: getEnv("GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL", ""),
+		GoogleWalletPrivateKey:          getEnv("GOOGLE_WALLET_PRIVATE_KEY", ""),
+		GoogleWalletReviewStatus:        getEnv("GOOGLE_WALLET_REVIEW_STATUS", "UNDER_REVIEW"),
 	}
 
 	if cfg.JWTSecret == "" {

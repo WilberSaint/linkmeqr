@@ -134,6 +134,7 @@ type updateThemeRequest struct {
 	FontFamily          string  `json:"font_family" validate:"required"`
 	ButtonStyle         string  `json:"button_style" validate:"required,oneof=rounded square pill outline"`
 	ButtonShadow        bool    `json:"button_shadow"`
+	Layout              string  `json:"layout" validate:"required,oneof=list grid"`
 }
 
 func (h *ProfileHandler) UpdateMyTheme(w http.ResponseWriter, r *http.Request) {
@@ -170,6 +171,7 @@ func (h *ProfileHandler) UpdateMyTheme(w http.ResponseWriter, r *http.Request) {
 	theme.FontFamily = req.FontFamily
 	theme.ButtonStyle = req.ButtonStyle
 	theme.ButtonShadow = req.ButtonShadow
+	theme.Layout = req.Layout
 
 	if err := h.profiles.UpdateTheme(r.Context(), theme); err != nil {
 		utils.Error(w, http.StatusInternalServerError, "internal_error", "Could not update theme.")
