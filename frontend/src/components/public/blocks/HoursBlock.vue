@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { ProfileTheme } from '@/types'
+import { hexToRgba } from '@/composables/gradientUtils'
 
 interface DayHours {
   day: string
@@ -95,7 +96,7 @@ const openState = computed<{ open: boolean; until: string } | null>(() => {
   <div
     v-if="schedule.length"
     class="w-full rounded-xl px-4 py-3 text-sm space-y-1"
-    :style="{ color: theme?.text_color, backgroundColor: 'rgba(0,0,0,0.04)' }"
+    :style="{ color: theme?.text_color, backgroundColor: hexToRgba(theme?.card_color ?? '#000000', theme?.card_opacity ?? 0.04) }"
   >
     <div v-if="openState" class="flex items-center gap-1.5 pb-1.5 mb-1 border-b border-current/10">
       <span

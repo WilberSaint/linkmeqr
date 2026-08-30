@@ -68,6 +68,21 @@ const blockGroups: { label: string; types: { value: BlockType; label: string }[]
 function onDragEnd(newList: ProfileBlock[]) {
   emit('reorder', newList)
 }
+
+/**
+ * Reordering by drag is fiddly on a touch screen — the surface most business
+ * owners actually edit their page on — so arrows on each row do the same
+ * swap without a drag gesture. Both go through the same 'reorder' event, so
+ * dragging and clicking the same page never disagree about how it works.
+ */
+function moveBlock(id: string, direction: -1 | 1) {
+  const index = props.blocks.findIndex((b) => b.id === id)
+  const target = index + direction
+  if (index === -1 || target < 0 || target >= props.blocks.length) return
+  const next = [...props.blocks]
+  ;[next[index], next[target]] = [next[target], next[index]]
+  emit('reorder', next)
+}
 </script>
 
 <template>
@@ -100,10 +115,13 @@ function onDragEnd(newList: ProfileBlock[]) {
           :block="element"
           :clicks="props.clicksByBlock?.[element.id]"
           :menu-file-uploading="uploadingMenuFileFor === element.id"
+          :can-move-up="blocks.findIndex((b) => b.id === element.id) > 0"
+          :can-move-down="blocks.findIndex((b) => b.id === element.id) < blocks.length - 1"
           @update="(payload, debounced) => emit('update', element.id, payload, debounced)"
           @remove="emit('remove', element.id)"
           @duplicate="emit('duplicate', element.id)"
           @upload-menu-file="(file) => emit('uploadMenuFile', element.id, file)"
+          @move="(direction) => moveBlock(element.id, direction)"
         />
       </template>
     </draggable>

@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { Star } from '@lucide/vue'
 import type { ProfileTheme } from '@/types'
+import { hexToRgba } from '@/composables/gradientUtils'
 
 interface Testimonial {
   author: string
@@ -23,7 +24,7 @@ const items = computed<Testimonial[]>(() => {
       v-for="(t, i) in items"
       :key="i"
       class="rounded-xl px-4 py-3 text-sm"
-      :style="{ color: theme?.text_color, backgroundColor: 'rgba(0,0,0,0.04)' }"
+      :style="{ color: theme?.text_color, backgroundColor: hexToRgba(theme?.card_color ?? '#000000', theme?.card_opacity ?? 0.04) }"
     >
       <div v-if="t.rating" class="flex gap-0.5 mb-1">
         <Star

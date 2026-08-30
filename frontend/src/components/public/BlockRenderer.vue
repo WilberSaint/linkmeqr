@@ -6,6 +6,7 @@ import {
 } from '@lucide/vue'
 import type { ProfileBlock, ProfileTheme } from '@/types'
 import { blockLabel } from '@/composables/blockLabels'
+import { buttonShapeClass } from '@/composables/buttonStyle'
 import InstagramIcon from '@/components/icons/InstagramIcon.vue'
 import FacebookIcon from '@/components/icons/FacebookIcon.vue'
 import WhatsappIcon from '@/components/icons/WhatsappIcon.vue'
@@ -68,18 +69,7 @@ const buttonColor = computed(() => {
   return props.theme?.secondary_color ?? '#6366f1'
 })
 
-const buttonStyleClass = computed(() => {
-  switch (props.theme?.button_style) {
-    case 'square':
-      return 'rounded-none'
-    case 'pill':
-      return 'rounded-full'
-    case 'outline':
-      return 'rounded-lg border-2 bg-transparent'
-    default:
-      return 'rounded-xl'
-  }
-})
+const buttonStyleClass = computed(() => buttonShapeClass(props.theme?.button_style))
 
 /**
  * The block's destination, repaired if needed.

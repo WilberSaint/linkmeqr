@@ -18,6 +18,8 @@ const props = defineProps<{
    * next to that decision, not only on a separate stats screen.
    */
   clicks?: number
+  canMoveUp?: boolean
+  canMoveDown?: boolean
 }>()
 /**
  * Warns about a URL that will be silently repaired on save, or that doesn't
@@ -55,6 +57,7 @@ const emit = defineEmits<{
   remove: []
   duplicate: []
   uploadMenuFile: [file: File]
+  move: [direction: -1 | 1]
 }>()
 
 /** Text fields report on every keystroke so the live preview actually moves. */
@@ -117,7 +120,30 @@ function setCustomColor(color: string) {
 <template>
   <div class="rounded-lg border border-gray-200 bg-white" :class="block.is_visible ? '' : 'opacity-60'">
     <div class="flex items-center gap-2 px-3 py-2.5">
-      <GripVertical :size="16" class="text-gray-300 drag-handle cursor-grab shrink-0" />
+      <GripVertical :size="16" class="text-gray-300 drag-handle cursor-grab shrink-0 hidden sm:block" />
+      <!-- Arrows do the same reorder as dragging the handle above, without a
+           drag gesture — the handle is awkward on a touch screen, which is
+           where most of these edits actually happen. -->
+      <div class="flex flex-col shrink-0 -my-1">
+        <button
+          class="p-0.5 text-gray-300 hover:text-gray-700 disabled:opacity-30 disabled:hover:text-gray-300"
+          title="Subir"
+          aria-label="Subir en la lista"
+          :disabled="!canMoveUp"
+          @click="emit('move', -1)"
+        >
+          <ChevronUp :size="14" />
+        </button>
+        <button
+          class="p-0.5 text-gray-300 hover:text-gray-700 disabled:opacity-30 disabled:hover:text-gray-300"
+          title="Bajar"
+          aria-label="Bajar en la lista"
+          :disabled="!canMoveDown"
+          @click="emit('move', 1)"
+        >
+          <ChevronDown :size="14" />
+        </button>
+      </div>
       <div class="flex-1 min-w-0">
         <p class="text-sm font-medium text-gray-900 truncate">{{ block.title || blockLabel(block.block_type) }}</p>
         <p class="text-xs text-gray-400">

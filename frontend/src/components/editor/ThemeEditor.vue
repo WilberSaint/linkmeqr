@@ -3,8 +3,9 @@ import { computed } from 'vue'
 import type { ProfileTheme } from '@/types'
 import { AVAILABLE_FONTS, ensureGoogleFontLoaded } from '@/composables/useGoogleFont'
 import { BACKGROUND_PRESETS } from '@/composables/backgroundPresets'
-import { buildGradient, contrastingTextColor, isSimpleLinearGradient } from '@/composables/gradientUtils'
+import { buildGradient, contrastRatio, contrastingTextColor, hexToRgba, isSimpleLinearGradient } from '@/composables/gradientUtils'
 import { PATTERNS, buildPatternBackground, isPatternBackground } from '@/composables/backgroundPatterns'
+import { buttonShapeClass } from '@/composables/buttonStyle'
 import GradientEditor from './GradientEditor.vue'
 import PatternEditor from './PatternEditor.vue'
 import ColorInput from './ColorInput.vue'
@@ -55,6 +56,24 @@ const backgroundFits: { value: ProfileTheme['background_fit']; label: string; hi
   { value: 'contain', label: 'Completa', hint: 'Se ve entera, sin recortes; el color de fondo rellena lo que sobre.' },
   { value: 'repeat', label: 'Mosaico', hint: 'Repite la imagen en su tamaño real — para patrones que ya se acoplan solos.' },
 ]
+
+/**
+ * Warns when the card panel and the text drawn on top of it are too close
+ * in tone. The panel is translucent, so its exact rendered color depends on
+ * whatever sits behind it — but at any opacity high enough to be doing real
+ * work, the panel's own hue already dominates that math, so comparing the
+ * two flat colors is a fair approximation without needing to know the
+ * actual background pixel.
+ *
+ * Silent below 15% opacity: that faint a tint reads as barely-there texture
+ * either way, not a legibility problem worth a warning.
+ */
+const cardContrastWarning = computed(() => {
+  if (props.theme.card_opacity < 0.15) return ''
+  const ratio = contrastRatio(props.theme.card_color, props.theme.text_color)
+  if (ratio < 2) return 'Tu texto se puede perder: el color de la tarjeta y el del texto son muy parecidos.'
+  return ''
+})
 
 const buttonStyles: { value: ProfileTheme['button_style']; label: string }[] = [
   { value: 'rounded', label: 'Redondeado' },
@@ -205,6 +224,42 @@ for (const f of AVAILABLE_FONTS) ensureGoogleFontLoaded(f)
           {{ backgroundFits.find((f) => f.value === theme.background_fit)?.hint }}
         </p>
       </div>
+    </section>
+
+    <section>
+      <h3 class="text-[11px] font-semibold text-gray-400 uppercase tracking-wide mb-2.5">Tarjetas de contenido</h3>
+      <p class="text-[11px] text-gray-400 mb-2.5">
+        El panel detrás de tu nombre, la reseña de Google, horarios y testimonios — súbele la opacidad si se pierden
+        sobre tu fondo.
+      </p>
+      <div class="flex items-center gap-3 mb-2">
+        <ColorInput :model-value="theme.card_color" @update:model-value="(v) => emit('update', { card_color: v })" />
+        <span class="text-xs text-gray-500 tabular-nums">{{ Math.round(theme.card_opacity * 100) }}%</span>
+      </div>
+      <input
+        type="range"
+        min="0"
+        max="1"
+        step="0.02"
+        class="w-full"
+        :value="theme.card_opacity"
+        @input="emit('update', { card_opacity: Number(($event.target as HTMLInputElement).value) })"
+      />
+      <div
+        class="mt-2.5 rounded-lg p-3 text-xs text-center"
+        :style="{
+          backgroundColor: '#6b7f5e',
+          color: '#ffffff',
+        }"
+      >
+        <div
+          class="rounded-lg py-2"
+          :style="{ backgroundColor: hexToRgba(theme.card_color, theme.card_opacity), color: theme.text_color }"
+        >
+          Así se ve tu texto encima
+        </div>
+      </div>
+      <p v-if="cardContrastWarning" class="text-[11px] text-amber-600 mt-1.5">{{ cardContrastWarning }}</p>
     </section>
 
     <section>
@@ -369,14 +424,30 @@ for (const f of AVAILABLE_FONTS) ensureGoogleFontLoaded(f)
       </select>
       <p class="mt-1.5 text-lg" :style="{ fontFamily: theme.font_family }">Vista previa: Aa Bb Cc</p>
 
-      <label class="block text-xs font-medium text-gray-600 mb-1 mt-4">Estilo de botones</label>
-      <select
-        :value="theme.button_style"
-        class="w-full rounded-lg border border-gray-300 px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-        @change="emit('update', { button_style: ($event.target as HTMLSelectElement).value as ProfileTheme['button_style'] })"
-      >
-        <option v-for="s in buttonStyles" :key="s.value" :value="s.value">{{ s.label }}</option>
-      </select>
+      <label class="block text-xs font-medium text-gray-600 mb-1.5 mt-4">Estilo de botones</label>
+      <div class="grid grid-cols-2 gap-2">
+        <button
+          v-for="s in buttonStyles"
+          :key="s.value"
+          type="button"
+          class="flex flex-col items-center gap-1.5 rounded-lg border-2 py-2.5 transition"
+          :class="theme.button_style === s.value ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'"
+          @click="emit('update', { button_style: s.value })"
+        >
+          <!-- The real brand color and shape, so choosing "Píldora" shows
+               exactly the pill this business's own page will get — not a
+               generic label describing it. -->
+          <span
+            class="w-14 h-6 border text-[10px]"
+            :class="buttonShapeClass(s.value)"
+            :style="{
+              backgroundColor: s.value === 'outline' ? 'transparent' : theme.secondary_color,
+              borderColor: theme.secondary_color,
+            }"
+          />
+          <span class="text-[11px] text-gray-600">{{ s.label }}</span>
+        </button>
+      </div>
 
       <label class="flex items-center gap-2 text-sm text-gray-700 mt-3">
         <input

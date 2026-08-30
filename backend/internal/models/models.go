@@ -128,6 +128,12 @@ type ProfileTheme struct {
 	// fills edge to edge and crops, "contain" shows the whole image with
 	// BackgroundValue as letterbox fill, "repeat" tiles it at natural size.
 	BackgroundFit       string    `db:"background_fit" json:"background_fit"`
+	// CardColor/CardOpacity style the translucent panel behind the header
+	// (logo, name, description, save-contact/share row) and text-heavy
+	// blocks (Google review, hours, testimonials) — the one thing standing
+	// between that text and an unpredictable background image.
+	CardColor           string    `db:"card_color" json:"card_color"`
+	CardOpacity         float64   `db:"card_opacity" json:"card_opacity"`
 	PrimaryColor        string    `db:"primary_color" json:"primary_color"`
 	SecondaryColor      string    `db:"secondary_color" json:"secondary_color"`
 	TextColor           string    `db:"text_color" json:"text_color"`

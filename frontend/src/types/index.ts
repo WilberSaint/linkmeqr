@@ -105,6 +105,14 @@ export interface ProfileTheme {
    * genuinely seamless pattern).
    */
   background_fit: 'cover' | 'contain' | 'repeat'
+  /**
+   * The translucent panel behind the name/description/save-contact/share
+   * header and text-heavy blocks (Google review, hours, testimonials) — the
+   * one thing keeping that text legible over an unpredictable background.
+   */
+  card_color: string
+  /** 0–1. 0 means no panel at all. */
+  card_opacity: number
   primary_color: string
   secondary_color: string
   text_color: string

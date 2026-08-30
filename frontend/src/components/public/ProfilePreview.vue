@@ -5,6 +5,8 @@ import type { Profile, ProfileBlock, ProfileTheme } from '@/types'
 import BlockRenderer from './BlockRenderer.vue'
 import { ensureGoogleFontLoaded } from '@/composables/useGoogleFont'
 import { buildVCard, downloadVCard, hasContactInfo } from '@/composables/vcard'
+import { hexToRgba } from '@/composables/gradientUtils'
+import { buttonShapeClass } from '@/composables/buttonStyle'
 
 const props = defineProps<{
   profile:
@@ -77,6 +79,20 @@ const backgroundStyle = computed(() => {
   // 'gradient' and 'pattern' values are already full CSS `background`
   // shorthand (solid colors also work fine passed through `background`).
   return { background: props.theme.background_value }
+})
+
+/** The header's own translucent panel — same setting the card-style content blocks read. */
+const cardBackground = computed(() => hexToRgba(props.theme?.card_color ?? '#000000', props.theme?.card_opacity ?? 0.04))
+
+/** Save-contact/share share the same color + shape language as every other button on the page. */
+const actionButtonStyle = computed(() => {
+  const brand = props.theme?.secondary_color ?? '#6366f1'
+  const outline = props.theme?.button_style === 'outline'
+  return {
+    backgroundColor: outline ? 'transparent' : brand,
+    borderColor: brand,
+    color: outline ? brand : props.theme?.button_text_color ?? '#ffffff',
+  }
 })
 
 const visibleBlocks = computed(() => props.blocks.filter((b) => b.is_visible))
@@ -171,30 +187,41 @@ const logoShapeClass = computed(() => {
         >
           {{ (profile?.business_name || '?').charAt(0).toUpperCase() }}
         </div>
-        <h1 class="mt-3 text-lg font-semibold text-center">{{ profile?.business_name || 'Tu negocio' }}</h1>
-        <p v-if="profile?.description" class="text-sm text-center opacity-80 mt-1">{{ profile.description }}</p>
+        <!-- Name, description and the save-contact/share row get their own
+             panel — unlike the logo (a solid circle, already fine on its
+             own), this is the text that was disappearing straight onto an
+             unpredictable background image. -->
+        <div
+          class="mt-3 px-4 py-3 rounded-xl flex flex-col items-center"
+          :style="{ backgroundColor: cardBackground }"
+        >
+          <h1 class="text-lg font-semibold text-center">{{ profile?.business_name || 'Tu negocio' }}</h1>
+          <p v-if="profile?.description" class="text-sm text-center opacity-80 mt-1">{{ profile.description }}</p>
 
-        <div v-if="showSaveContact || showShare" class="flex items-center gap-2 mt-3">
-          <button
-            v-if="showSaveContact"
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition hover:opacity-80"
-            :style="{ borderColor: 'currentColor', color: theme?.text_color }"
-            @click="onSaveContact"
-          >
-            <UserPlus class="w-3.5 h-3.5" />
-            Guardar contacto
-          </button>
-          <button
-            v-if="showShare"
-            type="button"
-            class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition hover:opacity-80"
-            :style="{ borderColor: 'currentColor', color: theme?.text_color }"
-            @click="onShare"
-          >
-            <Share2 class="w-3.5 h-3.5" />
-            {{ shareFeedback || 'Compartir' }}
-          </button>
+          <div v-if="showSaveContact || showShare" class="flex items-center gap-2 mt-3">
+            <button
+              v-if="showSaveContact"
+              type="button"
+              class="inline-flex items-center gap-1.5 border px-3 py-1.5 text-xs font-medium transition hover:opacity-80"
+              :class="buttonShapeClass(theme?.button_style)"
+              :style="actionButtonStyle"
+              @click="onSaveContact"
+            >
+              <UserPlus class="w-3.5 h-3.5" />
+              Guardar contacto
+            </button>
+            <button
+              v-if="showShare"
+              type="button"
+              class="inline-flex items-center gap-1.5 border px-3 py-1.5 text-xs font-medium transition hover:opacity-80"
+              :class="buttonShapeClass(theme?.button_style)"
+              :style="actionButtonStyle"
+              @click="onShare"
+            >
+              <Share2 class="w-3.5 h-3.5" />
+              {{ shareFeedback || 'Compartir' }}
+            </button>
+          </div>
         </div>
       </div>
 

@@ -33,13 +33,13 @@ func (r *ProfileThemeRepository) GetByProfileID(ctx context.Context, profileID s
 func (r *ProfileThemeRepository) Create(ctx context.Context, t *models.ProfileTheme) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO profile_themes
-			(id, profile_id, background_type, background_value, background_media_id, background_fit, primary_color,
-			 secondary_color, text_color, button_text_color, logo_background_color, logo_text_color,
-			 logo_display_mode, logo_shape, font_family, button_style, button_shadow, layout, extra_css_vars)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		t.ID, t.ProfileID, t.BackgroundType, t.BackgroundValue, t.BackgroundMediaID, t.BackgroundFit, t.PrimaryColor,
-		t.SecondaryColor, t.TextColor, t.ButtonTextColor, t.LogoBackgroundColor, t.LogoTextColor,
-		t.LogoDisplayMode, t.LogoShape, t.FontFamily, t.ButtonStyle, t.ButtonShadow, t.Layout, t.ExtraCSSVars,
+			(id, profile_id, background_type, background_value, background_media_id, background_fit, card_color,
+			 card_opacity, primary_color, secondary_color, text_color, button_text_color, logo_background_color,
+			 logo_text_color, logo_display_mode, logo_shape, font_family, button_style, button_shadow, layout, extra_css_vars)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		t.ID, t.ProfileID, t.BackgroundType, t.BackgroundValue, t.BackgroundMediaID, t.BackgroundFit, t.CardColor,
+		t.CardOpacity, t.PrimaryColor, t.SecondaryColor, t.TextColor, t.ButtonTextColor, t.LogoBackgroundColor,
+		t.LogoTextColor, t.LogoDisplayMode, t.LogoShape, t.FontFamily, t.ButtonStyle, t.ButtonShadow, t.Layout, t.ExtraCSSVars,
 	)
 	return err
 }
@@ -47,13 +47,13 @@ func (r *ProfileThemeRepository) Create(ctx context.Context, t *models.ProfileTh
 func (r *ProfileThemeRepository) Update(ctx context.Context, t *models.ProfileTheme) error {
 	_, err := r.db.ExecContext(ctx, `
 		UPDATE profile_themes SET
-			background_type = ?, background_value = ?, background_media_id = ?, background_fit = ?, primary_color = ?,
-			secondary_color = ?, text_color = ?, button_text_color = ?, logo_background_color = ?,
-			logo_text_color = ?, logo_display_mode = ?, logo_shape = ?, font_family = ?, button_style = ?,
-			button_shadow = ?, layout = ?, extra_css_vars = ?
+			background_type = ?, background_value = ?, background_media_id = ?, background_fit = ?, card_color = ?,
+			card_opacity = ?, primary_color = ?, secondary_color = ?, text_color = ?, button_text_color = ?,
+			logo_background_color = ?, logo_text_color = ?, logo_display_mode = ?, logo_shape = ?, font_family = ?,
+			button_style = ?, button_shadow = ?, layout = ?, extra_css_vars = ?
 		WHERE profile_id = ?`,
-		t.BackgroundType, t.BackgroundValue, t.BackgroundMediaID, t.BackgroundFit, t.PrimaryColor,
-		t.SecondaryColor, t.TextColor, t.ButtonTextColor, t.LogoBackgroundColor,
+		t.BackgroundType, t.BackgroundValue, t.BackgroundMediaID, t.BackgroundFit, t.CardColor,
+		t.CardOpacity, t.PrimaryColor, t.SecondaryColor, t.TextColor, t.ButtonTextColor, t.LogoBackgroundColor,
 		t.LogoTextColor, t.LogoDisplayMode, t.LogoShape, t.FontFamily, t.ButtonStyle,
 		t.ButtonShadow, t.Layout, t.ExtraCSSVars, t.ProfileID,
 	)

@@ -75,6 +75,8 @@ func (s *ProfileService) CreateForUser(ctx context.Context, userID, businessName
 		BackgroundType:      "color",
 		BackgroundValue:     "#ffffff",
 		BackgroundFit:       "cover",
+		CardColor:           "#000000",
+		CardOpacity:         0.04,
 		PrimaryColor:        "#111827",
 		SecondaryColor:      "#6366f1",
 		TextColor:           "#111827",

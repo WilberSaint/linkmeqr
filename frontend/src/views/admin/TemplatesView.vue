@@ -15,6 +15,8 @@ const DEFAULT_THEME: ProfileTheme = {
   background_type: 'color',
   background_value: '#f5f5f4',
   background_fit: 'cover',
+  card_color: '#000000',
+  card_opacity: 0.04,
   primary_color: '#111827',
   secondary_color: '#6366f1',
   text_color: '#111827',

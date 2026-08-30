@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import { Star } from '@lucide/vue'
 import type { ProfileBlock, ProfileTheme } from '@/types'
 import GoogleIcon from '@/components/icons/GoogleIcon.vue'
+import { hexToRgba } from '@/composables/gradientUtils'
+import { buttonShapeClass } from '@/composables/buttonStyle'
 
 const props = defineProps<{ block: ProfileBlock; theme: ProfileTheme | null }>()
 const emit = defineEmits<{ click: [] }>()
@@ -21,24 +23,13 @@ function onClick() {
   emit('click')
 }
 
-const buttonShapeClass = computed(() => {
-  switch (props.theme?.button_style) {
-    case 'square':
-      return 'rounded-none'
-    case 'pill':
-      return 'rounded-full'
-    case 'outline':
-      return 'rounded-lg border-2 bg-transparent'
-    default:
-      return 'rounded-xl'
-  }
-})
+const shapeClass = computed(() => buttonShapeClass(props.theme?.button_style))
 </script>
 
 <template>
   <div
     class="w-full rounded-xl p-4 text-center flex flex-col items-center gap-2"
-    :style="{ backgroundColor: 'rgba(0,0,0,0.04)', color: theme?.text_color }"
+    :style="{ backgroundColor: hexToRgba(theme?.card_color ?? '#000000', theme?.card_opacity ?? 0.04), color: theme?.text_color }"
   >
     <GoogleIcon :size="22" />
     <p class="text-sm font-medium">{{ block.title || '¿Nos regalas una reseña?' }}</p>
@@ -52,7 +43,7 @@ const buttonShapeClass = computed(() => {
       :rel="href ? 'noopener noreferrer' : undefined"
       :type="href ? undefined : 'button'"
       class="mt-1 inline-block px-4 py-2 text-sm font-medium shadow-sm transition-all duration-150 ease-out hover:-translate-y-0.5 hover:shadow-md active:translate-y-0 active:scale-[0.98]"
-      :class="buttonShapeClass"
+      :class="shapeClass"
       :style="{
         backgroundColor: theme?.button_style === 'outline' ? 'transparent' : theme?.secondary_color ?? '#6366f1',
         borderColor: theme?.secondary_color ?? '#6366f1',

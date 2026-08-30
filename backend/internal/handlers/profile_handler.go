@@ -129,6 +129,10 @@ type updateThemeRequest struct {
 	// hasn't caught up yet just omit it, and default to "cover" below rather
 	// than have the whole save rejected over one cosmetic field.
 	BackgroundFit       string  `json:"background_fit" validate:"omitempty,oneof=cover contain repeat"`
+	CardColor           string  `json:"card_color" validate:"omitempty"`
+	// 0 is a valid, meaningful value (no card at all), so this can't use
+	// "required" — validated by range below instead of a struct tag.
+	CardOpacity         float64 `json:"card_opacity"`
 	PrimaryColor        string  `json:"primary_color" validate:"required"`
 	SecondaryColor      string  `json:"secondary_color" validate:"required"`
 	TextColor           string  `json:"text_color" validate:"required"`
@@ -169,6 +173,17 @@ func (h *ProfileHandler) UpdateMyTheme(w http.ResponseWriter, r *http.Request) {
 	theme.BackgroundFit = req.BackgroundFit
 	if theme.BackgroundFit == "" {
 		theme.BackgroundFit = "cover"
+	}
+	theme.CardColor = req.CardColor
+	if theme.CardColor == "" {
+		theme.CardColor = "#000000"
+	}
+	theme.CardOpacity = req.CardOpacity
+	if theme.CardOpacity < 0 {
+		theme.CardOpacity = 0
+	}
+	if theme.CardOpacity > 1 {
+		theme.CardOpacity = 1
 	}
 	theme.PrimaryColor = req.PrimaryColor
 	theme.SecondaryColor = req.SecondaryColor
