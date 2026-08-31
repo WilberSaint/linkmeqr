@@ -19,8 +19,24 @@ type ContactBits = {
 
 /** Strips everything but digits and a leading +, the shape a dialer wants. */
 function cleanPhone(raw: string): string {
-  const plus = raw.trim().startsWith('+')
-  const digits = raw.replace(/[^\d]/g, '')
+  let digits = raw.replace(/[^\d]/g, '')
+  let plus = raw.trim().startsWith('+')
+
+  // A business's saved contact here is a Mexican number dialed locally, not
+  // internationally — the +52 a WhatsApp link carries is correct for
+  // reaching it from abroad, but wrong for a local contact card. Strip it
+  // whenever it's there, however many digits follow.
+  if (digits.length > 10 && digits.startsWith('52')) {
+    digits = digits.slice(2)
+    plus = false
+    // The old "dial a 1 for Mexican mobiles" convention, dropped by the
+    // 2019 numbering-plan reform — still shows up in numbers copied from
+    // older tools and links.
+    if (digits.length === 11 && digits.startsWith('1')) {
+      digits = digits.slice(1)
+    }
+  }
+
   return digits ? (plus ? `+${digits}` : digits) : ''
 }
 

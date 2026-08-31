@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { CircleAlert, Eye, EyeOff, Lock, Mail, QrCode } from '@lucide/vue'
+import { CircleAlert, Eye, EyeOff, Lock, Mail } from '@lucide/vue'
 import { useAuthStore } from '@/stores/auth'
 
 const auth = useAuthStore()
@@ -30,28 +30,6 @@ async function onSubmit() {
   }
 }
 
-// A decorative, non-scannable QR-art pattern for the brand panel — a 9x9
-// module grid with the 3 finder squares a real QR always has (so it reads
-// unmistakably as "a QR" at a glance) and a deterministic pseudo-random
-// scatter of filled modules everywhere else, computed once from a fixed
-// seed so the pattern is stable across renders instead of reshuffling.
-const qrArtModules = computed(() => {
-  const size = 9
-  const isFinderZone = (x: number, y: number) => (x < 3 && y < 3) || (x > size - 4 && y < 3) || (x < 3 && y > size - 4)
-  let seed = 42
-  const rand = () => {
-    seed = (seed * 1103515245 + 12345) & 0x7fffffff
-    return (seed % 1000) / 1000
-  }
-  const cells: { x: number; y: number }[] = []
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      if (isFinderZone(x, y)) continue
-      if (rand() > 0.55) cells.push({ x, y })
-    }
-  }
-  return cells
-})
 </script>
 
 <template>
@@ -67,25 +45,11 @@ const qrArtModules = computed(() => {
       <div class="absolute -bottom-32 -right-16 w-96 h-96 rounded-full bg-fuchsia-400/20 blur-3xl"></div>
 
       <div class="relative z-10 max-w-xs lg:max-w-sm xl:max-w-md text-white">
-        <svg viewBox="0 0 9 9" class="w-28 h-28 lg:w-40 lg:h-40 xl:w-48 xl:h-48 mb-6 lg:mb-10 drop-shadow-lg">
-          <rect x="0" y="0" width="3" height="3" rx="0.5" fill="none" stroke="white" stroke-width="0.5" opacity="0.9" />
-          <rect x="1" y="1" width="1" height="1" fill="white" opacity="0.9" />
-          <rect x="6" y="0" width="3" height="3" rx="0.5" fill="none" stroke="white" stroke-width="0.5" opacity="0.9" />
-          <rect x="7" y="1" width="1" height="1" fill="white" opacity="0.9" />
-          <rect x="0" y="6" width="3" height="3" rx="0.5" fill="none" stroke="white" stroke-width="0.5" opacity="0.9" />
-          <rect x="1" y="7" width="1" height="1" fill="white" opacity="0.9" />
-          <rect
-            v-for="(c, i) in qrArtModules"
-            :key="i"
-            :x="c.x"
-            :y="c.y"
-            width="1"
-            height="1"
-            rx="0.18"
-            fill="white"
-            :opacity="0.25 + ((c.x * 7 + c.y * 13) % 5) * 0.1"
-          />
-        </svg>
+        <img
+          src="/logo-blanco.png"
+          alt="LinkMeQR"
+          class="w-20 h-20 lg:w-28 lg:h-28 xl:w-32 xl:h-32 mb-6 lg:mb-10 drop-shadow-lg"
+        />
 
         <h1 class="text-2xl lg:text-3xl xl:text-4xl font-bold leading-tight mb-3">Todo tu negocio,<br />en un solo QR</h1>
         <p class="text-indigo-100 text-sm xl:text-base leading-relaxed">
@@ -99,9 +63,7 @@ const qrArtModules = computed(() => {
     <div class="flex-1 flex items-center justify-center px-4 py-12 bg-gradient-to-br from-indigo-50 via-white to-white md:bg-none">
       <div class="w-full max-w-sm">
         <div class="flex flex-col items-center md:items-start mb-6">
-          <div class="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shadow-sm shadow-indigo-200 mb-3 md:hidden">
-            <QrCode :size="24" />
-          </div>
+          <img src="/logo-indigo.png" alt="LinkMeQR" class="w-12 h-12 shadow-sm shadow-indigo-200 mb-3 md:hidden" />
           <h1 class="text-xl font-semibold text-gray-900">LinkMeQR</h1>
           <p class="text-sm text-gray-500 mt-0.5">Todo tu negocio en un QR</p>
         </div>
