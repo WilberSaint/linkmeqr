@@ -1,0 +1,31 @@
+# LinkMeQR block for /etc/caddy/Caddyfile (deploy/install.sh appends it).
+#
+# The domain is proxied by Cloudflare, so:
+#   * Cloudflare's SSL/TLS mode must be "Full (strict)" — with "Flexible" it
+#     talks plain HTTP to this server, Caddy redirects to HTTPS, and the
+#     visitor loops forever.
+#   * The certificate is still obtained by Caddy on its own (HTTP-01;
+#     Cloudflare passes /.well-known/acme-challenge/ through to the origin).
+#   * Every request arrives from a Cloudflare IP. The visitor's real address
+#     comes in CF-Connecting-IP and is forwarded as X-Real-IP, which the app
+#     reads — otherwise the per-IP rate limits would lump every visitor together.
+
+linkmeqr.org {
+	reverse_proxy 127.0.0.1:8090 {
+		header_up X-Real-IP {http.request.header.CF-Connecting-IP}
+	}
+	request_body {
+		max_size 20MB
+	}
+	encode gzip zstd
+	log {
+		output file /var/log/caddy/linkmeqr.log {
+			roll_size 10MB
+			roll_keep 5
+		}
+	}
+}
+
+www.linkmeqr.org {
+	redir https://linkmeqr.org{uri} permanent
+}

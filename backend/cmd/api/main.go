@@ -1,8 +1,17 @@
 package main
 
 import (
+	"context"
+	"errors"
+	"flag"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"path"
+	"path/filepath"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -20,21 +29,35 @@ import (
 )
 
 func main() {
+	backupTo := flag.String("backup", "", "write a consistent copy of the database to this path and exit")
+	flag.Parse()
+
 	_ = godotenv.Load()          // backend/.env, if running from backend/
 	_ = godotenv.Load("../.env") // repo-root .env, if running from backend/
+	if exe, err := os.Executable(); err == nil {
+		_ = godotenv.Load(filepath.Join(filepath.Dir(exe), ".env")) // beside the binary (server, cron)
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
 
-	db, err := database.Connect(cfg.MySQLDSN())
+	db, err := database.Connect(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("database error: %v", err)
 	}
 	defer db.Close()
 
-	if err := database.Migrate(db, "migrations"); err != nil {
+	if *backupTo != "" {
+		if err := database.Backup(db, *backupTo); err != nil {
+			log.Fatalf("backup error: %v", err)
+		}
+		log.Printf("backup written to %s", *backupTo)
+		return
+	}
+
+	if err := database.Migrate(db); err != nil {
 		log.Fatalf("migration error: %v", err)
 	}
 
@@ -50,10 +73,8 @@ func main() {
 	blockRepo := repository.NewProfileBlockRepository(db)
 	mediaRepo := repository.NewMediaRepository(db)
 	analyticsRepo := repository.NewAnalyticsRepository(db)
-	qrRepo := repository.NewQRRepository(db)
 	templateRepo := repository.NewTemplateRepository(db)
 	loyaltyRepo := repository.NewLoyaltyRepository(db)
-	printCardRepo := repository.NewPrintCardRepository(db)
 
 	// --- services ---
 	authSvc := services.NewAuthService(userRepo, refreshRepo, cfg.JWTSecret, cfg.JWTAccessTTL, cfg.JWTRefreshTTL)
@@ -64,10 +85,9 @@ func main() {
 	blockSvc := services.NewBlockService(blockRepo)
 	mediaSvc := services.NewMediaService(mediaRepo, cfg.MediaStoragePath)
 	analyticsSvc := services.NewAnalyticsService(analyticsRepo)
-	qrSvc := services.NewQRManagementService(qrRepo, mediaRepo, mediaSvc, cfg.PublicBaseURL)
+	qrSvc := services.NewQRService(cfg.PublicBaseURL)
 	templateSvc := services.NewTemplateService(templateRepo)
 	loyaltySvc := services.NewLoyaltyService(loyaltyRepo)
-	printCardSvc := services.NewPrintCardService(printCardRepo, profileSvc, blockSvc, qrSvc, loyaltySvc, mediaRepo, analyticsRepo)
 	googleWalletSvc, err := services.NewGoogleWalletService(services.GoogleWalletConfig{
 		IssuerID:            cfg.GoogleWalletIssuerID,
 		ServiceAccountEmail: cfg.GoogleWalletServiceAccountEmail,
@@ -88,13 +108,11 @@ func main() {
 	blockHandler := handlers.NewBlockHandler(blockSvc, profileSvc, mediaRepo)
 	mediaHandler := handlers.NewMediaHandler(mediaSvc)
 	publicHandler := handlers.NewPublicHandler(profileSvc, blockSvc, licenseRepo, analyticsSvc, mediaRepo)
-	shellHandler := handlers.NewShellHandler(profileSvc, licenseRepo, mediaRepo, cfg.FrontendShellURL, cfg.PublicBaseURL)
+	shellHandler := handlers.NewShellHandler(profileSvc, licenseRepo, mediaRepo, cfg.FrontendDistPath, cfg.FrontendShellURL, cfg.PublicBaseURL)
 	statsHandler := handlers.NewStatsHandler(profileSvc, analyticsSvc)
-	qrHandler := handlers.NewQRHandler(qrSvc, profileSvc, mediaRepo)
 	adminProfileHandler := handlers.NewAdminProfileHandler(profileSvc, auditSvc)
 	templateHandler := handlers.NewTemplateHandler(templateSvc, auditSvc)
 	loyaltyHandler := handlers.NewLoyaltyHandler(loyaltySvc, profileSvc, qrSvc, mediaRepo, auditSvc, googleWalletSvc)
-	printCardHandler := handlers.NewPrintCardHandler(printCardSvc, profileSvc, qrSvc, mediaRepo, mediaSvc, auditSvc, analyticsSvc)
 
 	loginLimiter := appmiddleware.NewIPRateLimiter(rate.Every(2*time.Second), 5)
 	generalLimiter := appmiddleware.NewIPRateLimiter(rate.Every(100*time.Millisecond), 30)
@@ -130,12 +148,6 @@ func main() {
 		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		mediaFiles.ServeHTTP(w, r)
 	}))
-
-	// Short, trackable links every exported print card's QR encodes — see
-	// PrintCardHandler.Scan. Deliberately outside /api and unauthenticated:
-	// this is hit directly by a phone camera scanning a physical card.
-	r.Get("/q/{code}", printCardHandler.Scan)
-	r.Get("/q/{code}/{slot}", printCardHandler.Scan)
 
 	// The public profile page. Served here rather than straight off the
 	// static frontend so each business's own Open Graph tags land in the
@@ -183,11 +195,6 @@ func main() {
 				r.Post("/me/blocks/{id}/duplicate", blockHandler.Duplicate)
 				r.Patch("/me/blocks/reorder", blockHandler.Reorder)
 
-				r.Get("/me/qr", qrHandler.Get)
-				r.Patch("/me/qr", qrHandler.Update)
-				r.Get("/me/qr/validate", qrHandler.Validate)
-				r.Get("/me/qr/export", qrHandler.Export)
-
 				r.Get("/me/stats/summary", statsHandler.MySummary)
 
 				r.Get("/me/loyalty", loyaltyHandler.GetMine)
@@ -212,36 +219,10 @@ func main() {
 					r.Post("/{id}/deactivate", clientHandler.SetActive(false))
 					r.Get("/{id}/profile", adminProfileHandler.GetForClient)
 					r.Post("/{id}/profile", adminProfileHandler.CreateForClient)
-					r.Patch("/{id}/profile/logo", adminProfileHandler.UpdateLogoForClient)
 					r.Post("/{id}/license/activate", licenseHandler.AdminActivate)
 					r.Post("/{id}/impersonate", clientHandler.Impersonate)
 
-					r.Get("/{id}/qr", qrHandler.GetForClient)
-					r.Patch("/{id}/qr", qrHandler.UpdateForClient)
-					r.Get("/{id}/qr/validate", qrHandler.ValidateForClient)
-					r.Get("/{id}/qr/export", qrHandler.ExportForClient)
-					r.Post("/{id}/media/upload", mediaHandler.UploadForClient)
-
-					r.Route("/{id}/print-cards", func(r chi.Router) {
-						r.Get("/", printCardHandler.List)
-						r.Post("/", printCardHandler.Create)
-						r.Post("/preview", printCardHandler.Preview)
-						r.Post("/seed-layout", printCardHandler.SeedLayout)
-						r.Post("/qr-preview", printCardHandler.QRPreview)
-						r.Get("/qr-targets", printCardHandler.QRTargets)
-						r.Get("/{cardId}", printCardHandler.Get)
-						r.Patch("/{cardId}", printCardHandler.Update)
-						r.Patch("/{cardId}/status", printCardHandler.UpdateStatus)
-						r.Delete("/{cardId}", printCardHandler.Delete)
-						r.Get("/{cardId}/export", printCardHandler.Export)
-						r.Get("/{cardId}/layout", printCardHandler.GetLayout)
-						r.Put("/{cardId}/layout", printCardHandler.SaveLayout)
-						r.Get("/{cardId}/layout/versions", printCardHandler.ListLayoutVersions)
-						r.Post("/{cardId}/layout/versions/{version}/restore", printCardHandler.RestoreLayoutVersion)
-					})
 				})
-
-				r.Get("/print-cards/icons/{name}", printCardHandler.IconPreview)
 
 				r.Get("/profiles", adminProfileHandler.List)
 
@@ -269,9 +250,58 @@ func main() {
 		})
 	})
 
-	addr := ":" + cfg.HTTPPort
-	log.Printf("LinkMeQR API listening on %s", addr)
-	if err := http.ListenAndServe(addr, r); err != nil {
+	// The built SPA, when this process serves it (production). Registered
+	// last as a catch-all, so every route above keeps precedence.
+	if cfg.FrontendDistPath != "" {
+		r.Get("/*", spaHandler(cfg.FrontendDistPath))
+	}
+
+	srv := &http.Server{
+		Addr:              cfg.HTTPHost + ":" + cfg.HTTPPort,
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	// Stop cleanly on SIGTERM (systemd stop/restart) so in-flight requests
+	// finish and the SQLite file is closed rather than cut off mid-write.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = srv.Shutdown(shutdownCtx)
+	}()
+
+	log.Printf("LinkMeQR API listening on %s", srv.Addr)
+	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("server error: %v", err)
+	}
+	log.Print("server stopped")
+}
+
+// spaHandler serves the built frontend: real files as-is, anything else as
+// index.html so client-side routes (/login, /admin/...) resolve on reload.
+// Vite fingerprints everything under /assets, so those cache forever; the
+// shell itself must never be cached or a redeploy wouldn't be picked up.
+func spaHandler(distPath string) http.HandlerFunc {
+	files := http.FileServer(http.Dir(distPath))
+	index := filepath.Join(distPath, "index.html")
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		clean := path.Clean("/" + r.URL.Path)
+		if clean != "/" {
+			if info, err := os.Stat(filepath.Join(distPath, filepath.FromSlash(clean))); err == nil && !info.IsDir() {
+				if strings.HasPrefix(clean, "/assets/") {
+					w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+				} else {
+					w.Header().Set("Cache-Control", "public, max-age=3600")
+				}
+				files.ServeHTTP(w, r)
+				return
+			}
+		}
+		w.Header().Set("Cache-Control", "no-cache")
+		http.ServeFile(w, r, index)
 	}
 }

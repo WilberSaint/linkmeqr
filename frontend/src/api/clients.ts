@@ -42,18 +42,6 @@ export function createClientProfile(clientId: string, payload: { business_name: 
   return apiClient.post<Profile>(`/admin/clients/${clientId}/profile`, payload).then((r) => r.data)
 }
 
-// Lets an admin attach/replace/clear a client's profile logo straight from
-// LinkMeQR Studio — the print-card "Ícono superior" needs one but a client
-// may never have set up (or published) a profile page of their own.
-// logoShape is set together with a fresh upload (from the crop modal) —
-// shared with the client's own theme.logo_shape, so the logo reads the
-// same way everywhere it appears.
-export function updateClientLogo(clientId: string, logoMediaId: string | null, logoShape?: 'circle' | 'rounded' | 'square') {
-  return apiClient
-    .patch<Profile>(`/admin/clients/${clientId}/profile/logo`, { logo_media_id: logoMediaId, logo_shape: logoShape ?? null })
-    .then((r) => r.data)
-}
-
 export interface ImpersonateResponse {
   access_token: string
   user: User

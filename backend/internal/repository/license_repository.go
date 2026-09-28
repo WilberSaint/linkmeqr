@@ -30,11 +30,12 @@ func (r *LicenseRepository) GetByUserID(ctx context.Context, userID string) (*mo
 	return &l, nil
 }
 
-// GetByUserIDForUpdate must run inside a transaction; it locks the row (or
-// signals that none exists yet) so concurrent activations can't race.
+// GetByUserIDForUpdate must run inside a transaction. SQLite has no row
+// locks: the transaction itself (BEGIN IMMEDIATE, see database.Connect)
+// holds the write lock, so concurrent activations can't race.
 func (r *LicenseRepository) GetByUserIDForUpdate(ctx context.Context, tx *sqlx.Tx, userID string) (*models.License, error) {
 	var l models.License
-	err := tx.GetContext(ctx, &l, `SELECT * FROM licenses WHERE user_id = ? FOR UPDATE`, userID)
+	err := tx.GetContext(ctx, &l, `SELECT * FROM licenses WHERE user_id = ?`, userID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}

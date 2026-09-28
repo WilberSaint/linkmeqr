@@ -19,39 +19,11 @@ func NewAnalyticsRepository(db *sqlx.DB) *AnalyticsRepository {
 func (r *AnalyticsRepository) Create(ctx context.Context, e *models.AnalyticsEvent) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO analytics_events
-			(id, profile_id, event_type, block_id, print_card_id, qr_slot, device_type, os_name, browser_name, referrer)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, e.ProfileID, e.EventType, e.BlockID, e.PrintCardID, e.QRSlot, e.DeviceType, e.OSName, e.BrowserName, e.Referrer,
+			(id, profile_id, event_type, block_id, device_type, os_name, browser_name, referrer)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, e.ProfileID, e.EventType, e.BlockID, e.DeviceType, e.OSName, e.BrowserName, e.Referrer,
 	)
 	return err
-}
-
-// PrintCardScanCount is a single card's total scan count — cheap enough to
-// query directly wherever one card is already being fetched (Get/Update),
-// without needing the batched per-client version below.
-func (r *AnalyticsRepository) PrintCardScanCount(ctx context.Context, cardID string) (int, error) {
-	var count int
-	err := r.db.GetContext(ctx, &count, `
-		SELECT COUNT(*) FROM analytics_events WHERE print_card_id = ? AND event_type = 'QR_SCAN'`, cardID)
-	return count, err
-}
-
-type PrintCardScanRow struct {
-	PrintCardID string `db:"print_card_id"`
-	Count       int    `db:"count"`
-}
-
-// PrintCardScansByUser returns every one of a client's print cards' scan
-// counts in one query — used by the card list, to avoid N+1 queries.
-func (r *AnalyticsRepository) PrintCardScansByUser(ctx context.Context, userID string) ([]PrintCardScanRow, error) {
-	rows := []PrintCardScanRow{}
-	err := r.db.SelectContext(ctx, &rows, `
-		SELECT ae.print_card_id AS print_card_id, COUNT(*) AS count
-		FROM analytics_events ae
-		JOIN print_cards pc ON pc.id = ae.print_card_id
-		WHERE pc.user_id = ? AND ae.event_type = 'QR_SCAN'
-		GROUP BY ae.print_card_id`, userID)
-	return rows, err
 }
 
 type Summary struct {
@@ -67,8 +39,8 @@ func (r *AnalyticsRepository) Summary(ctx context.Context, profileID string) (*S
 		SELECT
 			(SELECT COUNT(*) FROM analytics_events WHERE profile_id = ? AND event_type = 'VIEW') AS total_views,
 			(SELECT COUNT(*) FROM analytics_events WHERE profile_id = ? AND event_type = 'BLOCK_CLICK') AS total_clicks,
-			(SELECT COUNT(*) FROM analytics_events WHERE profile_id = ? AND event_type = 'VIEW' AND created_at >= NOW() - INTERVAL 7 DAY) AS views_7d,
-			(SELECT COUNT(*) FROM analytics_events WHERE profile_id = ? AND event_type = 'VIEW' AND created_at >= NOW() - INTERVAL 30 DAY) AS views_30d
+			(SELECT COUNT(*) FROM analytics_events WHERE profile_id = ? AND event_type = 'VIEW' AND created_at >= datetime('now', '-7 days')) AS views_7d,
+			(SELECT COUNT(*) FROM analytics_events WHERE profile_id = ? AND event_type = 'VIEW' AND created_at >= datetime('now', '-30 days')) AS views_30d
 	`, profileID, profileID, profileID, profileID)
 	return &s, err
 }
@@ -81,10 +53,10 @@ type DailyCount struct {
 func (r *AnalyticsRepository) Timeseries(ctx context.Context, profileID string, days int) ([]DailyCount, error) {
 	rows := []DailyCount{}
 	err := r.db.SelectContext(ctx, &rows, `
-		SELECT DATE(created_at) AS date, COUNT(*) AS count
+		SELECT date(created_at) AS date, COUNT(*) AS count
 		FROM analytics_events
-		WHERE profile_id = ? AND event_type = 'VIEW' AND created_at >= NOW() - INTERVAL ? DAY
-		GROUP BY DATE(created_at)
+		WHERE profile_id = ? AND event_type = 'VIEW' AND created_at >= datetime('now', '-' || ? || ' days')
+		GROUP BY date(created_at)
 		ORDER BY date ASC`, profileID, days)
 	return rows, err
 }

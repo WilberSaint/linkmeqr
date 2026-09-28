@@ -3,8 +3,6 @@ package handlers
 import (
 	"net/http"
 
-	"github.com/go-chi/chi/v5"
-
 	"linkmeqr/backend/internal/middleware"
 	"linkmeqr/backend/internal/services"
 	"linkmeqr/backend/internal/utils"
@@ -45,11 +43,4 @@ func (h *MediaHandler) upload(w http.ResponseWriter, r *http.Request, ownerID st
 
 func (h *MediaHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	h.upload(w, r, middleware.UserIDFromContext(r.Context()))
-}
-
-// UploadForClient handles POST /admin/clients/:id/media/upload — the file
-// is attributed to the client, not the admin, so it's owned the same way a
-// logo the client uploaded themselves through /me/qr would be.
-func (h *MediaHandler) UploadForClient(w http.ResponseWriter, r *http.Request) {
-	h.upload(w, r, chi.URLParam(r, "id"))
 }

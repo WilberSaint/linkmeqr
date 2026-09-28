@@ -41,28 +41,6 @@ func (s *AnalyticsService) RecordFromRequest(ctx context.Context, r *http.Reques
 	return s.repo.Create(ctx, event)
 }
 
-// RecordScan logs one scan of a print card's tracking QR — separate from
-// RecordFromRequest since it carries a print card + slot instead of a block,
-// and is called from an unauthenticated public redirect route.
-func (s *AnalyticsService) RecordScan(ctx context.Context, r *http.Request, profileID, printCardID, slot string) error {
-	deviceType, osName, browserName := utils.ParseUserAgent(r.UserAgent())
-	var slotPtr *string
-	if slot != "" {
-		slotPtr = &slot
-	}
-	event := &models.AnalyticsEvent{
-		ID:          uuid.NewString(),
-		ProfileID:   profileID,
-		EventType:   models.EventQRScan,
-		PrintCardID: &printCardID,
-		QRSlot:      slotPtr,
-		DeviceType:  &deviceType,
-		OSName:      &osName,
-		BrowserName: &browserName,
-	}
-	return s.repo.Create(ctx, event)
-}
-
 type StatsSummary struct {
 	repository.Summary
 	Timeseries  []repository.DailyCount    `json:"timeseries"`

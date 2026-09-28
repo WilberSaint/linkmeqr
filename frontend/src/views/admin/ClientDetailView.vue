@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ArrowLeft, Printer, UserRound } from '@lucide/vue'
+import { ArrowLeft, UserRound } from '@lucide/vue'
 import type { DurationType, LicenseActivation, Profile, User } from '@/types'
 import * as clientsApi from '@/api/clients'
 import * as licensesApi from '@/api/licenses'
@@ -111,12 +111,6 @@ onMounted(load)
         <ArrowLeft :size="14" /> Clientes
       </RouterLink>
       <div class="flex items-center gap-2">
-        <RouterLink
-          :to="{ name: 'admin-print-cards', params: { id: clientId } }"
-          class="inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 transition"
-        >
-          <Printer :size="15" /> LinkMeQR Studio
-        </RouterLink>
         <AppButton v-if="client?.is_active" variant="secondary" :disabled="impersonating" @click="onImpersonate">
           <UserRound :size="15" /> Ver como cliente
         </AppButton>

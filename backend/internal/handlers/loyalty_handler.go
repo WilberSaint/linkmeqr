@@ -19,13 +19,13 @@ import (
 type LoyaltyHandler struct {
 	loyalty  *services.LoyaltyService
 	profiles *services.ProfileService
-	qr       *services.QRManagementService
+	qr       *services.QRService
 	media    *repository.MediaRepository
 	audit    *services.AuditService
 	wallet   *services.GoogleWalletService
 }
 
-func NewLoyaltyHandler(loyalty *services.LoyaltyService, profiles *services.ProfileService, qr *services.QRManagementService, media *repository.MediaRepository, audit *services.AuditService, wallet *services.GoogleWalletService) *LoyaltyHandler {
+func NewLoyaltyHandler(loyalty *services.LoyaltyService, profiles *services.ProfileService, qr *services.QRService, media *repository.MediaRepository, audit *services.AuditService, wallet *services.GoogleWalletService) *LoyaltyHandler {
 	return &LoyaltyHandler{loyalty: loyalty, profiles: profiles, qr: qr, media: media, audit: audit, wallet: wallet}
 }
 
@@ -321,8 +321,8 @@ func (h *LoyaltyHandler) GetMine(w http.ResponseWriter, r *http.Request) {
 }
 
 // ExportQR handles GET /api/me/loyalty/qr?format=png|svg — a QR encoding the
-// same URL an NFC tag would be programmed with, styled using the business's
-// own saved QR look. No stamping/business logic here at all: this only
+// same URL an NFC tag would be programmed with, as a plain black-on-white
+// code. No stamping/business logic here at all: this only
 // renders an image around a URL the loyalty handlers already serve.
 func (h *LoyaltyHandler) ExportQR(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.UserIDFromContext(r.Context())
@@ -332,23 +332,10 @@ func (h *LoyaltyHandler) ExportQR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	profile, err := h.profiles.GetByUserID(r.Context(), userID)
-	if err != nil {
-		utils.Error(w, http.StatusNotFound, "not_found", "Perfil no encontrado.")
-		return
-	}
-
-	qr, err := h.qr.GetOrCreate(r.Context(), profile.ID)
-	if err != nil {
-		utils.Error(w, http.StatusInternalServerError, "internal_error", "No se pudo cargar el estilo del QR.")
-		return
-	}
-
 	content := h.qr.LoyaltyURL(program.LoyaltyToken)
-	customization := h.qr.ToCustomizationWithContent(r.Context(), qr, content)
 
 	if r.URL.Query().Get("format") == "svg" {
-		svg, err := services.RenderSVG(customization)
+		svg, err := services.RenderQRSVG(content)
 		if err != nil {
 			utils.Error(w, http.StatusInternalServerError, "internal_error", "No se pudo generar el QR.")
 			return
@@ -359,7 +346,7 @@ func (h *LoyaltyHandler) ExportQR(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pngBytes, err := services.RenderPNG(customization)
+	pngBytes, err := services.RenderQRPNG(content)
 	if err != nil {
 		utils.Error(w, http.StatusInternalServerError, "internal_error", "No se pudo generar el QR.")
 		return

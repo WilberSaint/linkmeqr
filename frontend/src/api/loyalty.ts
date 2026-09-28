@@ -89,8 +89,7 @@ export function redeemCustomer(id: string) {
   return apiClient.post(`/me/loyalty/customers/${id}/redeem`)
 }
 
-// Same blob-preview pattern as frontend/src/api/qr.ts — the export endpoint
-// requires the Authorization header, so it can't be used as a plain <img src>.
+// The export endpoint requires the Authorization header, so it can't be used as a plain <img src>.
 export async function fetchLoyaltyQrPreview(): Promise<string> {
   const res = await apiClient.get('/me/loyalty/qr', { params: { format: 'png' }, responseType: 'blob' })
   return URL.createObjectURL(res.data as Blob)

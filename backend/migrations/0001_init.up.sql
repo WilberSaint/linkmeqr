@@ -1,259 +1,319 @@
--- LinkMeQR initial schema (MySQL 8)
--- UUIDs stored as CHAR(36) for readability/portability (generated in application code).
--- Charset/timezone are set on the connection (DSN: charset=utf8mb4&loc=UTC), not here,
--- since golang-migrate's mysql driver runs each migration file as a single statement.
+-- LinkMeQR schema (SQLite).
+--
+-- Consolidates what used to be 24 incremental MySQL migrations into the
+-- schema they had arrived at. Conventions:
+--   * UUIDs as TEXT (generated in application code).
+--   * MySQL ENUMs become TEXT with a CHECK constraint.
+--   * JSON columns are TEXT; the application reads/writes them as strings.
+--   * DATETIME columns keep that declared type so the driver scans them into
+--     time.Time. Everything is stored in UTC.
+--   * MySQL's ON UPDATE CURRENT_TIMESTAMP is emulated with AFTER UPDATE
+--     triggers at the end of this file.
+-- Foreign keys are enforced per connection (PRAGMA foreign_keys=ON in the DSN).
 
 -- ============================================================
 -- users: both ADMIN and CLIENT accounts
 -- ============================================================
 CREATE TABLE users (
-    id              CHAR(36)     NOT NULL PRIMARY KEY,
-    email           VARCHAR(190) NOT NULL,
-    password_hash   VARCHAR(255) NOT NULL,
-    role            ENUM('ADMIN','CLIENT') NOT NULL DEFAULT 'CLIENT',
-    full_name       VARCHAR(150) NOT NULL,
-    phone           VARCHAR(30)  NULL,
-    is_active       TINYINT(1)   NOT NULL DEFAULT 1,
-    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_users_email (email),
-    KEY idx_users_role (role)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id              TEXT     NOT NULL PRIMARY KEY,
+    email           TEXT     NOT NULL,
+    password_hash   TEXT     NOT NULL,
+    role            TEXT     NOT NULL DEFAULT 'CLIENT' CHECK (role IN ('ADMIN','CLIENT')),
+    full_name       TEXT     NOT NULL,
+    phone           TEXT     NULL,
+    is_active       INTEGER  NOT NULL DEFAULT 1,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX uq_users_email ON users (email);
+CREATE INDEX idx_users_role ON users (role);
 
 -- ============================================================
 -- refresh_tokens: JWT refresh token store (allows revocation)
 -- ============================================================
 CREATE TABLE refresh_tokens (
-    id              CHAR(36)     NOT NULL PRIMARY KEY,
-    user_id         CHAR(36)     NOT NULL,
-    token_hash      VARCHAR(255) NOT NULL,
-    expires_at      DATETIME     NOT NULL,
-    revoked_at      DATETIME     NULL,
-    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    KEY idx_refresh_user (user_id),
-    UNIQUE KEY uq_refresh_token_hash (token_hash),
-    CONSTRAINT fk_refresh_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id              TEXT     NOT NULL PRIMARY KEY,
+    user_id         TEXT     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token_hash      TEXT     NOT NULL,
+    expires_at      DATETIME NOT NULL,
+    revoked_at      DATETIME NULL,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_refresh_user ON refresh_tokens (user_id);
+CREATE UNIQUE INDEX uq_refresh_token_hash ON refresh_tokens (token_hash);
 
 -- ============================================================
 -- templates: predefined visual templates (Minimal, Business, ...)
 -- ============================================================
 CREATE TABLE templates (
-    id              CHAR(36)     NOT NULL PRIMARY KEY,
-    slug            VARCHAR(60)  NOT NULL,
-    name            VARCHAR(100) NOT NULL,
-    description     VARCHAR(255) NULL,
-    preview_image   VARCHAR(255) NULL,
-    default_theme   JSON         NOT NULL,
-    is_active       TINYINT(1)   NOT NULL DEFAULT 1,
-    sort_order      INT          NOT NULL DEFAULT 0,
-    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_templates_slug (slug)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- ============================================================
--- profiles: one public digital profile per client (1:1 with user, extensible to many later)
--- ============================================================
-CREATE TABLE profiles (
-    id              CHAR(36)     NOT NULL PRIMARY KEY,
-    user_id         CHAR(36)     NOT NULL,
-    slug            VARCHAR(80)  NOT NULL,
-    business_name   VARCHAR(150) NOT NULL,
-    description     VARCHAR(500) NULL,
-    logo_media_id   CHAR(36)     NULL,
-    cover_media_id  CHAR(36)     NULL,
-    template_id     CHAR(36)     NULL,
-    is_published    TINYINT(1)   NOT NULL DEFAULT 1,
-    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_profiles_slug (slug),
-    KEY idx_profiles_user (user_id),
-    CONSTRAINT fk_profiles_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    CONSTRAINT fk_profiles_template FOREIGN KEY (template_id) REFERENCES templates(id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- ============================================================
--- profile_themes: visual customization for a profile (1:1)
--- ============================================================
-CREATE TABLE profile_themes (
-    id                  CHAR(36)     NOT NULL PRIMARY KEY,
-    profile_id          CHAR(36)     NOT NULL,
-    background_type     ENUM('color','gradient','image') NOT NULL DEFAULT 'color',
-    background_value    VARCHAR(500) NOT NULL DEFAULT '#ffffff',
-    primary_color       VARCHAR(20)  NOT NULL DEFAULT '#111827',
-    secondary_color     VARCHAR(20)  NOT NULL DEFAULT '#6366f1',
-    text_color          VARCHAR(20)  NOT NULL DEFAULT '#111827',
-    font_family         VARCHAR(80)  NOT NULL DEFAULT 'Inter',
-    button_style        ENUM('rounded','square','pill','outline') NOT NULL DEFAULT 'rounded',
-    button_shadow       TINYINT(1)   NOT NULL DEFAULT 0,
-    extra_css_vars      JSON         NULL,
-    updated_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_theme_profile (profile_id),
-    CONSTRAINT fk_theme_profile FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- ============================================================
--- profile_blocks: ordered content blocks on a profile page
--- ============================================================
-CREATE TABLE profile_blocks (
-    id              CHAR(36)     NOT NULL PRIMARY KEY,
-    profile_id      CHAR(36)     NOT NULL,
-    block_type      ENUM('instagram','facebook','tiktok','youtube','whatsapp','phone','email',
-                         'location','website','menu','catalog','image','video','text','link')
-                         NOT NULL,
-    title           VARCHAR(150) NULL,
-    description     VARCHAR(500) NULL,
-    url             VARCHAR(500) NULL,
-    icon            VARCHAR(60)  NULL,
-    media_id        CHAR(36)     NULL,
-    style_overrides JSON         NULL,
-    content         JSON         NULL,
-    is_visible      TINYINT(1)   NOT NULL DEFAULT 1,
-    sort_order      INT          NOT NULL DEFAULT 0,
-    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    KEY idx_blocks_profile_order (profile_id, sort_order),
-    CONSTRAINT fk_blocks_profile FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id              TEXT     NOT NULL PRIMARY KEY,
+    slug            TEXT     NOT NULL,
+    name            TEXT     NOT NULL,
+    description     TEXT     NULL,
+    default_theme   TEXT     NOT NULL,
+    is_active       INTEGER  NOT NULL DEFAULT 1,
+    sort_order      INTEGER  NOT NULL DEFAULT 0,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX uq_templates_slug ON templates (slug);
 
 -- ============================================================
 -- media: uploaded images/files (logos, backgrounds, block images)
 -- ============================================================
 CREATE TABLE media (
-    id              CHAR(36)     NOT NULL PRIMARY KEY,
-    owner_user_id   CHAR(36)     NOT NULL,
-    file_name       VARCHAR(255) NOT NULL,
-    file_path       VARCHAR(500) NOT NULL,
-    mime_type       VARCHAR(100) NOT NULL,
-    size_bytes      BIGINT       NOT NULL DEFAULT 0,
-    width           INT          NULL,
-    height          INT          NULL,
-    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    KEY idx_media_owner (owner_user_id),
-    CONSTRAINT fk_media_owner FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id              TEXT     NOT NULL PRIMARY KEY,
+    owner_user_id   TEXT     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    file_name       TEXT     NOT NULL,
+    file_path       TEXT     NOT NULL,
+    mime_type       TEXT     NOT NULL,
+    size_bytes      INTEGER  NOT NULL DEFAULT 0,
+    width           INTEGER  NULL,
+    height          INTEGER  NULL,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_media_owner ON media (owner_user_id);
 
--- Add FKs from profiles to media now that media exists
-ALTER TABLE profiles
-    ADD CONSTRAINT fk_profiles_logo_media FOREIGN KEY (logo_media_id) REFERENCES media(id) ON DELETE SET NULL,
-    ADD CONSTRAINT fk_profiles_cover_media FOREIGN KEY (cover_media_id) REFERENCES media(id) ON DELETE SET NULL;
+-- ============================================================
+-- profiles: one public digital profile per client
+-- ============================================================
+CREATE TABLE profiles (
+    id              TEXT     NOT NULL PRIMARY KEY,
+    user_id         TEXT     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    slug            TEXT     NOT NULL,
+    business_name   TEXT     NOT NULL,
+    description     TEXT     NULL,
+    logo_media_id   TEXT     NULL REFERENCES media(id) ON DELETE SET NULL,
+    cover_media_id  TEXT     NULL REFERENCES media(id) ON DELETE SET NULL,
+    template_id     TEXT     NULL REFERENCES templates(id) ON DELETE SET NULL,
+    is_published    INTEGER  NOT NULL DEFAULT 1,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX uq_profiles_slug ON profiles (slug);
+CREATE INDEX idx_profiles_user ON profiles (user_id);
 
-ALTER TABLE profile_blocks
-    ADD CONSTRAINT fk_blocks_media FOREIGN KEY (media_id) REFERENCES media(id) ON DELETE SET NULL;
+-- ============================================================
+-- profile_themes: visual customization for a profile (1:1)
+-- ============================================================
+CREATE TABLE profile_themes (
+    id                    TEXT     NOT NULL PRIMARY KEY,
+    profile_id            TEXT     NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    background_type       TEXT     NOT NULL DEFAULT 'color'
+                                   CHECK (background_type IN ('color','gradient','pattern','image')),
+    background_value      TEXT     NOT NULL DEFAULT '#ffffff',
+    -- For 'image' backgrounds; background_value keeps the CSS value otherwise.
+    background_media_id   TEXT     NULL REFERENCES media(id) ON DELETE SET NULL,
+    -- How an 'image' background is sized against the viewport.
+    background_fit        TEXT     NOT NULL DEFAULT 'cover'
+                                   CHECK (background_fit IN ('cover','contain','repeat')),
+    -- Translucent panel behind the header and text-heavy blocks.
+    card_color            TEXT     NOT NULL DEFAULT '#000000',
+    card_opacity          REAL     NOT NULL DEFAULT 0.04,
+    primary_color         TEXT     NOT NULL DEFAULT '#111827',
+    secondary_color       TEXT     NOT NULL DEFAULT '#6366f1',
+    text_color            TEXT     NOT NULL DEFAULT '#111827',
+    button_text_color     TEXT     NOT NULL DEFAULT '#ffffff',
+    logo_background_color TEXT     NOT NULL DEFAULT '#111827',
+    logo_text_color       TEXT     NOT NULL DEFAULT '#ffffff',
+    logo_display_mode     TEXT     NOT NULL DEFAULT 'initial'
+                                   CHECK (logo_display_mode IN ('image','initial')),
+    logo_shape            TEXT     NOT NULL DEFAULT 'circle'
+                                   CHECK (logo_shape IN ('circle','rounded','square')),
+    font_family           TEXT     NOT NULL DEFAULT 'Inter',
+    button_style          TEXT     NOT NULL DEFAULT 'rounded'
+                                   CHECK (button_style IN ('rounded','square','pill','outline')),
+    button_shadow         INTEGER  NOT NULL DEFAULT 0,
+    layout                TEXT     NOT NULL DEFAULT 'list' CHECK (layout IN ('list','grid')),
+    extra_css_vars        TEXT     NULL,
+    updated_at            DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX uq_theme_profile ON profile_themes (profile_id);
+
+-- ============================================================
+-- profile_blocks: ordered content blocks on a profile page
+-- ============================================================
+CREATE TABLE profile_blocks (
+    id              TEXT     NOT NULL PRIMARY KEY,
+    profile_id      TEXT     NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    block_type      TEXT     NOT NULL CHECK (block_type IN (
+                        'instagram','facebook','tiktok','youtube','whatsapp','phone','email',
+                        'location','website','menu','catalog','image','video','text','link',
+                        'google_review','gallery','hours','testimonials','map')),
+    title           TEXT     NULL,
+    description     TEXT     NULL,
+    url             TEXT     NULL,
+    icon            TEXT     NULL,
+    media_id        TEXT     NULL REFERENCES media(id) ON DELETE SET NULL,
+    style_overrides TEXT     NULL,
+    content         TEXT     NULL,
+    is_visible      INTEGER  NOT NULL DEFAULT 1,
+    sort_order      INTEGER  NOT NULL DEFAULT 0,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_blocks_profile_order ON profile_blocks (profile_id, sort_order);
 
 -- ============================================================
 -- licenses: current license/subscription state per client (1:1 with user)
 -- ============================================================
 CREATE TABLE licenses (
-    id              CHAR(36)     NOT NULL PRIMARY KEY,
-    user_id         CHAR(36)     NOT NULL,
-    status          ENUM('INACTIVE','ACTIVE','EXPIRED') NOT NULL DEFAULT 'INACTIVE',
-    activated_at    DATETIME     NULL,
-    expires_at      DATETIME     NULL,
-    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_license_user (user_id),
-    KEY idx_license_status_expiry (status, expires_at),
-    CONSTRAINT fk_license_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id              TEXT     NOT NULL PRIMARY KEY,
+    user_id         TEXT     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status          TEXT     NOT NULL DEFAULT 'INACTIVE'
+                             CHECK (status IN ('INACTIVE','ACTIVE','EXPIRED')),
+    activated_at    DATETIME NULL,
+    expires_at      DATETIME NULL,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX uq_license_user ON licenses (user_id);
+CREATE INDEX idx_license_status_expiry ON licenses (status, expires_at);
 
 -- ============================================================
 -- activation_codes: generated codes (individual or batch)
 -- ============================================================
 CREATE TABLE activation_codes (
-    id              CHAR(36)     NOT NULL PRIMARY KEY,
-    code            VARCHAR(32)  NOT NULL,
-    duration_type   ENUM('1_MONTH','3_MONTHS','6_MONTHS','1_YEAR','CUSTOM') NOT NULL,
-    duration_days   INT          NOT NULL,
-    status          ENUM('UNUSED','USED','REVOKED') NOT NULL DEFAULT 'UNUSED',
-    batch_id        CHAR(36)     NULL,
-    assigned_user_id CHAR(36)    NULL,
-    used_by_user_id CHAR(36)    NULL,
-    created_by_admin_id CHAR(36) NOT NULL,
-    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    activated_at    DATETIME     NULL,
-    expires_at      DATETIME     NULL COMMENT 'expiration resulting from this activation, informational',
-    revoked_at      DATETIME     NULL,
-    UNIQUE KEY uq_code (code),
-    KEY idx_codes_status (status),
-    KEY idx_codes_batch (batch_id),
-    KEY idx_codes_assigned (assigned_user_id),
-    CONSTRAINT fk_codes_assigned FOREIGN KEY (assigned_user_id) REFERENCES users(id) ON DELETE SET NULL,
-    CONSTRAINT fk_codes_used_by FOREIGN KEY (used_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
-    CONSTRAINT fk_codes_admin FOREIGN KEY (created_by_admin_id) REFERENCES users(id) ON DELETE RESTRICT
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id                  TEXT     NOT NULL PRIMARY KEY,
+    code                TEXT     NOT NULL,
+    duration_type       TEXT     NOT NULL
+                                 CHECK (duration_type IN ('1_MONTH','3_MONTHS','6_MONTHS','1_YEAR','CUSTOM')),
+    duration_days       INTEGER  NOT NULL,
+    status              TEXT     NOT NULL DEFAULT 'UNUSED' CHECK (status IN ('UNUSED','USED','REVOKED')),
+    batch_id            TEXT     NULL,
+    assigned_user_id    TEXT     NULL REFERENCES users(id) ON DELETE SET NULL,
+    used_by_user_id     TEXT     NULL REFERENCES users(id) ON DELETE SET NULL,
+    created_by_admin_id TEXT     NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    activated_at        DATETIME NULL,
+    -- Expiration resulting from this activation, informational.
+    expires_at          DATETIME NULL,
+    revoked_at          DATETIME NULL
+);
+CREATE UNIQUE INDEX uq_code ON activation_codes (code);
+CREATE INDEX idx_codes_status ON activation_codes (status);
+CREATE INDEX idx_codes_batch ON activation_codes (batch_id);
+CREATE INDEX idx_codes_assigned ON activation_codes (assigned_user_id);
 
 -- ============================================================
 -- license_activations: full audit history of activations/renewals
 -- ============================================================
 CREATE TABLE license_activations (
-    id                  CHAR(36)     NOT NULL PRIMARY KEY,
-    license_id          CHAR(36)     NOT NULL,
-    activation_code_id  CHAR(36)     NOT NULL,
-    user_id             CHAR(36)     NOT NULL,
-    duration_days_added INT          NOT NULL,
-    previous_expires_at DATETIME     NULL,
-    new_expires_at      DATETIME     NOT NULL,
-    activated_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    KEY idx_activations_license (license_id),
-    KEY idx_activations_user (user_id),
-    CONSTRAINT fk_activations_license FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE,
-    CONSTRAINT fk_activations_code FOREIGN KEY (activation_code_id) REFERENCES activation_codes(id) ON DELETE RESTRICT,
-    CONSTRAINT fk_activations_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- ============================================================
--- qr_codes: QR customization settings tied to a profile
--- ============================================================
-CREATE TABLE qr_codes (
-    id                  CHAR(36)     NOT NULL PRIMARY KEY,
-    profile_id          CHAR(36)     NOT NULL,
-    foreground_color    VARCHAR(20)  NOT NULL DEFAULT '#000000',
-    background_color    VARCHAR(20)  NOT NULL DEFAULT '#ffffff',
-    module_style        ENUM('square','dots','rounded') NOT NULL DEFAULT 'square',
-    eye_style           ENUM('square','circular','rounded') NOT NULL DEFAULT 'square',
-    logo_media_id       CHAR(36)     NULL,
-    error_correction    ENUM('L','M','Q','H') NOT NULL DEFAULT 'M',
-    has_scannability_warning TINYINT(1) NOT NULL DEFAULT 0,
-    created_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_qr_profile (profile_id),
-    CONSTRAINT fk_qr_profile FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
-    CONSTRAINT fk_qr_logo_media FOREIGN KEY (logo_media_id) REFERENCES media(id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- ============================================================
--- analytics_events: profile visits and link clicks
--- ============================================================
-CREATE TABLE analytics_events (
-    id              CHAR(36)     NOT NULL PRIMARY KEY,
-    profile_id      CHAR(36)     NOT NULL,
-    event_type      ENUM('VIEW','BLOCK_CLICK') NOT NULL,
-    block_id        CHAR(36)     NULL,
-    device_type     VARCHAR(20)  NULL COMMENT 'mobile/tablet/desktop',
-    os_name         VARCHAR(40)  NULL,
-    browser_name    VARCHAR(40)  NULL,
-    referrer        VARCHAR(255) NULL,
-    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    KEY idx_events_profile_date (profile_id, created_at),
-    KEY idx_events_type (event_type),
-    CONSTRAINT fk_events_profile FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE,
-    CONSTRAINT fk_events_block FOREIGN KEY (block_id) REFERENCES profile_blocks(id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id                  TEXT     NOT NULL PRIMARY KEY,
+    license_id          TEXT     NOT NULL REFERENCES licenses(id) ON DELETE CASCADE,
+    activation_code_id  TEXT     NOT NULL REFERENCES activation_codes(id) ON DELETE RESTRICT,
+    user_id             TEXT     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    duration_days_added INTEGER  NOT NULL,
+    previous_expires_at DATETIME NULL,
+    new_expires_at      DATETIME NOT NULL,
+    activated_at        DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_activations_license ON license_activations (license_id);
+CREATE INDEX idx_activations_user ON license_activations (user_id);
 
 -- ============================================================
 -- audit_logs: administrative action history
 -- ============================================================
 CREATE TABLE audit_logs (
-    id              CHAR(36)     NOT NULL PRIMARY KEY,
-    actor_user_id   CHAR(36)     NULL,
-    action          VARCHAR(100) NOT NULL,
-    entity_type     VARCHAR(60)  NOT NULL,
-    entity_id       VARCHAR(36)  NULL,
-    metadata        JSON         NULL,
-    ip_address      VARCHAR(45)  NULL,
-    created_at      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    KEY idx_audit_actor (actor_user_id),
-    KEY idx_audit_entity (entity_type, entity_id),
-    CONSTRAINT fk_audit_actor FOREIGN KEY (actor_user_id) REFERENCES users(id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+    id              TEXT     NOT NULL PRIMARY KEY,
+    actor_user_id   TEXT     NULL REFERENCES users(id) ON DELETE SET NULL,
+    action          TEXT     NOT NULL,
+    entity_type     TEXT     NOT NULL,
+    entity_id       TEXT     NULL,
+    metadata        TEXT     NULL,
+    ip_address      TEXT     NULL,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_audit_actor ON audit_logs (actor_user_id);
+CREATE INDEX idx_audit_entity ON audit_logs (entity_type, entity_id);
+
+-- ============================================================
+-- Loyalty / stamp cards. loyalty_customers are the business's own walk-in
+-- patrons — never platform users — recognized via a browser-cookie token.
+-- ============================================================
+CREATE TABLE loyalty_programs (
+    id                     TEXT     NOT NULL PRIMARY KEY,
+    user_id                TEXT     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    stamps_required        INTEGER  NOT NULL DEFAULT 10,
+    -- Optional intermediate reward; non-null mid_reward_stamps enables it.
+    mid_reward_stamps      INTEGER  NULL,
+    mid_reward_description TEXT     NULL,
+    reward_description     TEXT     NULL,
+    loyalty_token          TEXT     NOT NULL,
+    is_active              INTEGER  NOT NULL DEFAULT 1,
+    created_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at             DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX uq_loyalty_programs_user ON loyalty_programs (user_id);
+CREATE UNIQUE INDEX uq_loyalty_programs_token ON loyalty_programs (loyalty_token);
+
+CREATE TABLE loyalty_customers (
+    id              TEXT     NOT NULL PRIMARY KEY,
+    user_id         TEXT     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    full_name       TEXT     NOT NULL,
+    phone           TEXT     NULL,
+    identity_token  TEXT     NOT NULL,
+    stamps_count    INTEGER  NOT NULL DEFAULT 0,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE UNIQUE INDEX uq_loyalty_customers_identity ON loyalty_customers (identity_token);
+CREATE INDEX idx_loyalty_customers_user ON loyalty_customers (user_id);
+
+CREATE TABLE loyalty_stamps (
+    id                  TEXT     NOT NULL PRIMARY KEY,
+    loyalty_customer_id TEXT     NOT NULL REFERENCES loyalty_customers(id) ON DELETE CASCADE,
+    source              TEXT     NOT NULL DEFAULT 'nfc' CHECK (source IN ('nfc','manual')),
+    created_by_admin_id TEXT     NULL REFERENCES users(id) ON DELETE SET NULL,
+    created_at          DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_loyalty_stamps_customer ON loyalty_stamps (loyalty_customer_id, created_at);
+
+-- ============================================================
+-- analytics_events: profile visits and link clicks
+-- ============================================================
+CREATE TABLE analytics_events (
+    id              TEXT     NOT NULL PRIMARY KEY,
+    profile_id      TEXT     NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+    event_type      TEXT     NOT NULL CHECK (event_type IN ('VIEW','BLOCK_CLICK')),
+    block_id        TEXT     NULL REFERENCES profile_blocks(id) ON DELETE SET NULL,
+    device_type     TEXT     NULL, -- mobile/tablet/desktop
+    os_name         TEXT     NULL,
+    browser_name    TEXT     NULL,
+    referrer        TEXT     NULL,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_events_profile_date ON analytics_events (profile_id, created_at);
+CREATE INDEX idx_events_type ON analytics_events (event_type);
+
+-- ============================================================
+-- updated_at maintenance (MySQL's ON UPDATE CURRENT_TIMESTAMP).
+-- The WHEN clause skips updates that set updated_at themselves; the inner
+-- UPDATE doesn't re-fire the trigger since recursive_triggers is off.
+-- ============================================================
+CREATE TRIGGER trg_users_updated_at AFTER UPDATE ON users
+WHEN NEW.updated_at IS OLD.updated_at
+BEGIN UPDATE users SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END;
+
+CREATE TRIGGER trg_profiles_updated_at AFTER UPDATE ON profiles
+WHEN NEW.updated_at IS OLD.updated_at
+BEGIN UPDATE profiles SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END;
+
+CREATE TRIGGER trg_profile_themes_updated_at AFTER UPDATE ON profile_themes
+WHEN NEW.updated_at IS OLD.updated_at
+BEGIN UPDATE profile_themes SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END;
+
+CREATE TRIGGER trg_profile_blocks_updated_at AFTER UPDATE ON profile_blocks
+WHEN NEW.updated_at IS OLD.updated_at
+BEGIN UPDATE profile_blocks SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END;
+
+CREATE TRIGGER trg_licenses_updated_at AFTER UPDATE ON licenses
+WHEN NEW.updated_at IS OLD.updated_at
+BEGIN UPDATE licenses SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END;
+
+CREATE TRIGGER trg_loyalty_programs_updated_at AFTER UPDATE ON loyalty_programs
+WHEN NEW.updated_at IS OLD.updated_at
+BEGIN UPDATE loyalty_programs SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END;
+
+CREATE TRIGGER trg_loyalty_customers_updated_at AFTER UPDATE ON loyalty_customers
+WHEN NEW.updated_at IS OLD.updated_at
+BEGIN UPDATE loyalty_customers SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id; END;

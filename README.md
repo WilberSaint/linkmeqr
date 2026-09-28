@@ -4,83 +4,86 @@
 
 - **Frontend**: Vue 3 + Vite + TypeScript, Tailwind CSS, Pinia, Vue Router.
 - **Backend**: Go (API REST), chi router, sqlx.
-- **Base de datos**: MySQL 8 + phpMyAdmin.
-- **Infraestructura**: Docker Compose + Nginx (reverse proxy), pensado para un droplet de DigitalOcean.
+- **Base de datos**: SQLite (un solo archivo, driver en Go puro — sin servidor de base de datos).
+- **Infraestructura**: un único binario Go que sirve la API, el frontend compilado y los archivos subidos; servicio systemd detrás de Caddy (dominio + HTTPS automático). Sin Docker.
 
-Ver [ARCHITECTURE.md](ARCHITECTURE.md) para el diseño completo (esquema de datos, contrato de API, algoritmo de licencias, generación de QR).
+Ver [ARCHITECTURE.md](ARCHITECTURE.md) para el diseño completo (esquema de datos, contrato de API, algoritmo de licencias).
 
 ## Requisitos
 
-- Docker y Docker Compose (v2)
-- Un dominio apuntando al droplet (opcional para desarrollo local)
+- Para compilar (en tu máquina): Go 1.25+ y Node 20+.
+- En el servidor: Linux con systemd y Caddy. **No necesita Go, Node, Docker ni MySQL.**
 
-## Despliegue rápido (Linux / DigitalOcean droplet)
+## Despliegue (servidor Linux + Caddy)
 
-1. **Clonar el repositorio en el servidor:**
+La app vive en `/opt/linkmeqr`:
+
+```
+/opt/linkmeqr/
+  linkmeqr      binario (API + frontend + media; migraciones embebidas)
+  seed          crea el admin inicial y las plantillas
+  dist/         frontend compilado
+  data/         linkmeqr.db (SQLite)
+  media/        imágenes subidas
+  backups/      copias de la base
+  backup.sh     respaldo diario (cron)
+  .env          configuración (ver .env.example)
+```
+
+### Primera vez
+
+1. Sube la app y crea el `.env` en el servidor (`/opt/linkmeqr/.env`, a partir de `.env.example`). Como mínimo:
+   - `JWT_SECRET` — `openssl rand -base64 48`.
+   - `FRONTEND_ORIGIN` y `PUBLIC_BASE_URL` — el dominio real, ej. `https://linkmeqr.org` (sin slash final). `PUBLIC_BASE_URL` es lo que se codifica en cada QR, así que debe ser el dominio público definitivo.
+   - `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`.
+2. Crea el admin y las plantillas: `cd /opt/linkmeqr && ./seed` (crea la base si no existe).
+3. Instala el servicio, el permiso de reinicio para `deploy.sh` y el bloque de Caddy (única parte que requiere sudo). Con `install.sh`, `linkmeqr.service` y `Caddyfile.snippet` copiados a `/opt/linkmeqr`:
    ```bash
-   git clone <repo-url> linkmeqr
-   cd linkmeqr
+   sudo bash /opt/linkmeqr/install.sh
    ```
+4. **Cloudflare** (el dominio va proxied): SSL/TLS → modo **Full (strict)**. Con "Flexible" el sitio entra en un bucle de redirecciones. Ver notas en `deploy/Caddyfile.snippet`.
+5. Respaldo diario: `crontab -e` → `30 3 * * * /opt/linkmeqr/backup.sh >/dev/null 2>&1`.
 
-2. **Configurar variables de entorno:**
-   ```bash
-   cp .env.example .env
-   nano .env
-   ```
-   Como mínimo, cambia:
-   - `DB_PASSWORD`, `MYSQL_ROOT_PASSWORD` — contraseñas de MySQL.
-   - `JWT_SECRET` — genera uno con `openssl rand -base64 48`.
-   - `FRONTEND_ORIGIN` y `PUBLIC_BASE_URL` — el dominio real, ej. `https://linkmeqr.com` (sin slash final). `PUBLIC_BASE_URL` es la URL que se codifica dentro de cada QR (`{PUBLIC_BASE_URL}/p/{slug}`), así que debe ser el dominio público final.
-   - `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` — credenciales del administrador inicial.
+### Actualizar
 
-3. **Levantar el stack completo:**
-   ```bash
-   docker compose -f docker-compose.prod.yml up -d --build
-   ```
-   Esto construye e inicia: `mysql`, `phpmyadmin`, `backend` (Go), `frontend` (Vue compilado, servido por Nginx interno), y `nginx` (reverse proxy en el puerto 80).
+Desde la raíz del repo, en tu máquina (Git Bash en Windows):
 
-   > `docker-compose.yml` (sin `-f`) es el usado para desarrollo local — solo levanta `mysql` y `phpmyadmin`, ya que ahí el backend y frontend se corren manualmente en terminales separadas (ver "Desarrollo local" más abajo). En el servidor de producción usa siempre `-f docker-compose.prod.yml`.
+```bash
+bash deploy/deploy.sh
+```
 
-   El backend aplica las migraciones de `backend/migrations/` automáticamente al arrancar.
+Compila el backend para Linux y el frontend, sube ambos, respalda la base antes de migrar, cambia los archivos (dejando `linkmeqr.anterior` y `dist.anterior` para volver atrás) y reinicia el servicio. Nunca toca `data/`, `media/` ni `.env`.
 
-4. **Crear el administrador inicial y las plantillas por defecto:**
-   ```bash
-   docker compose -f docker-compose.prod.yml exec backend ./seed
-   ```
-   Esto crea el usuario ADMIN con `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` (si no existe ya) y las 7 plantillas predefinidas (Minimal, Business, Restaurant, Modern, Elegant, Dark, Colorful).
+Logs: `journalctl -u linkmeqr -f`. Health check: `curl http://127.0.0.1:8090/healthz`.
 
-5. **Verificar:**
-   - Frontend: `http://tu-dominio/` → pantalla de login.
-   - API health check: `http://tu-dominio/healthz` → `ok`.
-   - phpMyAdmin: `http://tu-dominio/phpmyadmin/` (restringir acceso a nivel de firewall/VPN en producción; no está pensado para exponerse públicamente).
+### Base de datos
 
-6. **HTTPS (recomendado en producción):** coloca un proxy TLS delante (Certbot + Nginx, o un load balancer de DigitalOcean) apuntando al puerto 80 del contenedor `nginx`, o añade un `server { listen 443 ssl; ... }` a `nginx/nginx.conf` con tus certificados montados como volumen.
+- Las migraciones están embebidas en el binario y se aplican solas al arrancar.
+- Respaldo manual en caliente: `./linkmeqr -backup /ruta/copia.db` (usa `VACUUM INTO`, seguro con la app corriendo — no copies `linkmeqr.db` con `cp` mientras corre).
+- Restaurar: detén el servicio, reemplaza `data/linkmeqr.db` por la copia, borra `data/linkmeqr.db-wal` y `-shm` si existen, y arranca.
 
 ## Flujo principal de uso
 
 1. El **administrador** inicia sesión, crea un cliente (`Clientes → + Nuevo cliente`).
 2. El administrador genera un **código de activación** (`Licencias → Generar código`, individual o por lote) con la duración deseada (1 mes, 3 meses, 6 meses, 1 año o personalizada).
 3. El administrador crea/asigna el **perfil digital** del cliente (`Clientes → Ver perfil / licencia → Crear perfil`), definiendo el `slug` que usará su URL pública y QR.
-4. El administrador entrega al cliente sus credenciales y el código de activación (tarjeta física con el QR se genera después desde el panel del cliente).
+4. El administrador entrega al cliente sus credenciales y el código de activación.
 5. El **cliente** inicia sesión, va a `Licencia` e introduce su código de activación.
 6. El cliente personaliza su perfil en `Editor de perfil` (bloques, colores, tipografía, plantilla) con vista previa en tiempo real.
-7. El cliente genera y descarga su **QR personalizado** en `Código QR` (PNG o SVG) para imprimir en su tarjeta física — este QR siempre apunta a `/p/:slug` y no cambia aunque el contenido se edite.
+7. La URL pública `/p/:slug` es permanente: cualquier QR que apunte a ella sigue funcionando aunque el contenido se edite.
 8. Cualquier persona que escanee el QR llega a la página pública; si la licencia del cliente vence, la página pública muestra automáticamente un aviso de "perfil temporalmente inactivo" hasta que se reactive.
 
 ## Desarrollo local (backend y frontend corridos manualmente)
 
-En este modo, Docker solo levanta la infraestructura (MySQL + phpMyAdmin). El backend Go y el frontend Vite se corren cada uno en su propia terminal — así ves logs, hot-reload, y puedes probar desde el celular en la misma red Wi-Fi.
+El backend Go y el frontend Vite se corren cada uno en su propia terminal — así ves logs, hot-reload, y puedes probar desde el celular en la misma red Wi-Fi. No hace falta instalar ninguna base de datos: SQLite crea `backend/data/linkmeqr.db` solo.
 
-### 0. Levantar solo MySQL + phpMyAdmin
+### 0. Configuración
 
 ```bash
 cp .env.local.example .env
-docker compose up -d
 ```
 
-Esto expone MySQL en `localhost:3306` y phpMyAdmin en `http://localhost:8081`.
-
-> Nota: `.env.local.example` trae valores de ejemplo ya listos para desarrollo (incluyendo tu IP LAN de referencia `192.168.103.139` en `FRONTEND_ORIGIN` / `PUBLIC_BASE_URL`). Ajusta esa IP a la tuya — la terminal del backend la imprime al arrancar, o revisa con `ipconfig` (Windows) / `ip addr` (Linux) la interfaz Wi-Fi/LAN.
+> Nota: `.env.local.example` trae valores de ejemplo ya listos para desarrollo (incluyendo tu IP LAN de referencia `192.168.103.139` en `FRONTEND_ORIGIN` / `PUBLIC_BASE_URL`). Ajusta esa IP a la tuya — revisa con `ipconfig` (Windows) / `ip addr` (Linux) la interfaz Wi-Fi/LAN.
 
 ### 1. Terminal A — Backend (Go)
 
@@ -89,7 +92,7 @@ cd backend
 go run ./cmd/api
 ```
 
-Lee las variables desde `../.env` (vía `godotenv`). Aplica las migraciones automáticamente al arrancar y queda escuchando en `0.0.0.0:8080` (todas las interfaces, así que también responde en tu IP LAN).
+Lee las variables desde `../.env` (vía `godotenv`). Crea la base si no existe, aplica las migraciones automáticamente al arrancar y queda escuchando en `0.0.0.0:8080` (todas las interfaces, así que también responde en tu IP LAN).
 
 La primera vez, en otra terminal, siembra el admin y las plantillas:
 ```bash
@@ -126,20 +129,15 @@ Vite arranca con `host: true`, por lo que además de `http://localhost:5173` que
 3. `Licencias → Generar código` (1 mes, por ejemplo).
 4. `Clientes → Ver perfil / licencia → Crear perfil` — define el `slug` (ej. `mi-negocio-test`).
 5. Cierra sesión, entra como ese cliente, ve a `Licencia` y activa el código generado.
-6. Ve a `Editar mi perfil` para personalizar bloques/colores/plantilla con vista previa en vivo, y a `Código QR` para generar y descargar el QR.
+6. Ve a `Editar mi perfil` para personalizar bloques/colores/plantilla con vista previa en vivo.
 7. Visita `http://<tu-ip-lan>:5173/p/mi-negocio-test` desde el celular para ver la página pública tal como la vería un cliente que escanea el QR.
-
-### Producción (Docker Compose completo)
-
-El archivo `docker-compose.prod.yml` incluye backend, frontend y Nginx además de MySQL/phpMyAdmin — es el que se usa para el despliegue real en el droplet de DigitalOcean (ver sección "Despliegue rápido" arriba), corriendo `docker compose -f docker-compose.prod.yml up -d --build` en vez de `docker compose up -d`.
 
 ## Estructura del proyecto
 
 ```
 backend/    API REST en Go (ver ARCHITECTURE.md § Estructura de carpetas)
 frontend/   SPA en Vue 3 + TypeScript
-nginx/      Configuración del reverse proxy principal
-docker-compose.yml
+deploy/     Servicio systemd, bloque de Caddy, scripts de despliegue y respaldo
 .env.example
 ARCHITECTURE.md   Diseño técnico completo
 ```

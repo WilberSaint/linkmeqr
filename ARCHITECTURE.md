@@ -6,31 +6,26 @@
 
 - **Frontend**: Vue 3 + Vite + TypeScript, Tailwind CSS, Pinia, Vue Router.
 - **Backend**: Go, API REST.
-- **DB**: MySQL 8 + phpMyAdmin.
+- **DB**: SQLite (archivo único, driver Go puro `modernc.org/sqlite`, WAL).
 - **Auth**: JWT (access + refresh), Argon2id, roles ADMIN/CLIENT.
-- **Infra**: Docker Compose + Nginx (reverse proxy), pensado para un droplet de DigitalOcean.
+- **Infra**: un solo binario Go (API + SPA compilada + media) como servicio systemd, detrás de Caddy (dominio + HTTPS). Sin Docker.
 
 ## 2. Diagrama de arquitectura
 
 ```
-                         ┌────────────────────┐
-                         │       Nginx         │  :80 / :443
-                         │  reverse proxy      │
-                         └─────────┬───────────┘
-              ┌──────────────────┼───────────────────┬───────────────┐
-              │                  │                   │               │
-        /  (estático)      /api/*  (proxy)      /phpmyadmin/*   (futuro: /p/* SSR opcional)
-              │                  │                   │
-    ┌─────────▼────────┐ ┌───────▼────────┐ ┌────────▼─────────┐
-    │ frontend (Vue3)   │ │ backend (Go)    │ │ phpMyAdmin        │
-    │ build estático     │ │ :8080 REST API  │ │ :80 (contenedor)  │
-    │ servido por Nginx  │ │                 │ │                   │
-    └────────────────────┘ └───────┬─────────┘ └─────────┬─────────┘
-                                    │                     │
-                              ┌─────▼─────────────────────▼─────┐
-                              │            MySQL 8               │
-                              │  volumen persistente `db_data`   │
-                              └───────────────────────────────────┘
+   internet ──► Caddy :80/:443  (un bloque por dominio, HTTPS automático)
+                    │
+                    ▼  reverse_proxy 127.0.0.1:8090
+   ┌──────────────────────────────────────────────────────┐
+   │ linkmeqr (binario Go, servicio systemd)              │
+   │   /api/*    REST API                                 │
+   │   /p/:slug  shell del SPA con Open Graph inyectado    │
+   │   /q/:code  redirección rastreable de tarjetas       │
+   │   /media/*  archivos subidos  (media/)               │
+   │   /*        SPA compilada     (dist/)                │
+   └──────────────────────────┬───────────────────────────┘
+                              ▼
+                    data/linkmeqr.db (SQLite, WAL)
 ```
 
 El frontend es una SPA compilada a estáticos sin SSR: la ruta pública `/p/:slug` se resuelve en el cliente vía Vue Router, y el backend expone `GET /api/public/profiles/:slug` sin autenticación. El QR siempre codifica `https://linkmeqr.com/p/:slug` — nunca cambia aunque el contenido del perfil se edite.
@@ -43,7 +38,7 @@ backend/
   cmd/api/main.go                 # entrypoint, wiring de dependencias, arranque HTTP
   internal/
     config/                       # carga de .env / variables de entorno
-    database/                     # conexión MySQL, migrator
+    database/                     # conexión SQLite (pragmas), migrator, respaldo
     models/                       # structs de dominio (User, Profile, License, ActivationCode, ...)
     repository/                   # acceso a datos (SQL puro con database/sql + sqlx)
     services/                     # lógica de negocio (auth, licensing, profiles, qr, analytics)
@@ -51,21 +46,21 @@ backend/
     middleware/                   # JWT auth, roles, rate limit, CORS, logging, recover
     validator/                    # validación de payloads (go-playground/validator)
     utils/                        # helpers (uuid, hashing, jwt, qr render, response envelope)
-  migrations/                     # SQL versionado (0001_init.sql, ...)
+  migrations/                     # SQL versionado, embebido en el binario (embed.FS)
   seed/                           # seed del admin inicial
   go.mod / go.sum
-  Dockerfile
 ```
 
 Decisiones de librerías Go:
 - Router: `chi` (ligero, idiomático, buen soporte de middleware).
-- DB: `database/sql` + driver `go-sql-driver/mysql`, con `sqlx` para queries ergonómicas (sin ORM pesado — control total sobre SQL, más fácil de razonar sobre el acumulado de licencias).
-- Migraciones: `golang-migrate/migrate` (CLI + librería), archivos en `migrations/`.
+- DB: `database/sql` + driver `modernc.org/sqlite` (Go puro, sin CGO: compila cruzado a Linux como binario estático), con `sqlx` para queries ergonómicas (sin ORM pesado — control total sobre SQL, más fácil de razonar sobre el acumulado de licencias).
+- Migraciones: `golang-migrate/migrate` (driver `sqlite`, fuente `iofs` embebida), archivos en `migrations/`.
+- Concurrencia: toda transacción es `BEGIN IMMEDIATE` (`_txlock=immediate`), lo que sustituye al `SELECT ... FOR UPDATE` de MySQL en la activación de licencias.
 - JWT: `golang-jwt/jwt/v5`.
 - Password hashing: `golang.org/x/crypto/argon2` (Argon2id).
 - Validación: `go-playground/validator/v10`.
 - Rate limiting: middleware propio basado en `golang.org/x/time/rate` (in-memory, por IP+ruta, suficiente para MVP single-node).
-- QR: `github.com/skip2/go-qrcode` como base para matriz QR (control de nivel de corrección de errores L/M/Q/H); render final de PNG/SVG con lógica propia de dibujo (permite personalizar módulos/ojos/logo y mantener quiet zone), usando `image/png` de la stdlib y generación manual de SVG (string building) para exportación vectorial.
+- QR: `github.com/skip2/go-qrcode`, solo para el QR de la tarjeta de lealtad — negro sobre blanco, corrección `M`, PNG y SVG (`services/qr_service.go`). No hay generador de QR con estilos.
 - UUID: `google/uuid`.
 
 ### Frontend (Vue 3) — `frontend/`
@@ -94,7 +89,6 @@ frontend/
       client/DashboardView.vue, ProfileEditorView.vue, LicenseView.vue
       admin/DashboardView.vue, ClientsView.vue, LicensesView.vue, ActivationCodesView.vue, TemplatesView.vue, StatsView.vue
   index.html, vite.config.ts, tailwind.config.js, tsconfig.json
-  Dockerfile (multi-stage build → artefactos estáticos)
 ```
 
 Librerías frontend:
@@ -105,7 +99,7 @@ Librerías frontend:
 
 ## 4. Esquema de base de datos
 
-Ya creado en [migrations/0001_init.sql](backend/migrations/0001_init.sql): `users`, `refresh_tokens`, `templates`, `profiles`, `profile_themes`, `profile_blocks`, `media`, `licenses`, `activation_codes`, `license_activations`, `qr_codes`, `analytics_events`, `audit_logs`. UUIDs como `CHAR(36)` generados en Go (`google/uuid`). Índices en FKs y en columnas de filtrado frecuente (slug, status+expires_at, profile_id+created_at para analytics).
+Ya creado en [migrations/0001_init.sql](backend/migrations/0001_init.sql): `users`, `refresh_tokens`, `templates`, `profiles`, `profile_themes`, `profile_blocks`, `media`, `licenses`, `activation_codes`, `license_activations`, `analytics_events`, `audit_logs`, `loyalty_programs`, `loyalty_customers`, `loyalty_stamps`. UUIDs como `TEXT` generados en Go (`google/uuid`). Índices en FKs y en columnas de filtrado frecuente (slug, status+expires_at, profile_id+created_at para analytics).
 
 ## 5. Lógica de licencias (núcleo del negocio)
 
@@ -115,10 +109,10 @@ Tabla `licenses`: una fila por usuario CLIENT, con `status` (`INACTIVE`/`ACTIVE`
 ```
 func ActivateCode(userID, code string) error:
     BEGIN TRANSACTION
-    ac := SELECT activation_codes WHERE code = ? FOR UPDATE
+    ac := SELECT activation_codes WHERE code = ?
     if ac == nil or ac.status != 'UNUSED': return ErrInvalidCode
 
-    license := SELECT licenses WHERE user_id = ? FOR UPDATE
+    license := SELECT licenses WHERE user_id = ?
     if license == nil:
         license = new License{user_id, status: INACTIVE, expires_at: NULL}
         INSERT license
@@ -147,7 +141,7 @@ func ActivateCode(userID, code string) error:
 ```
 
 Puntos clave:
-- `FOR UPDATE` en ambas filas evita condiciones de carrera si el usuario reintenta el submit.
+- La transacción es `BEGIN IMMEDIATE` (toma el candado de escritura de SQLite desde el inicio), lo que evita condiciones de carrera si el usuario reintenta el submit.
 - La condición de "vencida" es `expires_at <= now` (no solo el campo `status`, que se corrige de forma perezosa en este mismo flujo y también vía un job/consulta que marca `EXPIRED` cuando se lee el estado).
 - `license_activations` guarda el historial completo pedido: código usado, días agregados, fecha anterior, fecha nueva.
 - Un cron/goroutine ligero (o simplemente el cálculo en cada `GetLicenseStatus`) determina "activo" comparando `expires_at` contra `now`, así no depende de un job batch para el MVP.
@@ -180,7 +174,6 @@ Puntos clave:
 - `PATCH /api/me/blocks/reorder` (array de `{id, sort_order}`)
 - `POST /api/me/license/activate` (body: `{code}`)
 - `GET /api/me/license/history`
-- `GET /api/me/qr` · `PATCH /api/me/qr` · `GET /api/me/qr/export?format=png|svg`
 - `GET /api/me/stats/summary` · `GET /api/me/stats/timeseries?range=7d|30d`
 - `POST /api/media/upload` (logo, fondo, imágenes de bloques)
 
@@ -196,33 +189,19 @@ Puntos clave:
 - `GET /api/admin/stats/overview` (totales de clientes, licencias activas/vencidas, visitas globales)
 - `GET /api/admin/audit-logs` (filtros por entidad/actor)
 
-**QR** (rol CLIENT, propio perfil)
-- `GET /api/qr/preview` (query params de personalización → PNG/SVG on-the-fly, para el editor)
-- Devuelve junto al binario/])SVG un header o endpoint hermano `GET /api/qr/validate` que responde `{ warnings: string[] }` cuando la combinación de colores/logo compromete el contraste o el error-correction disponible.
-
 **Público** (sin auth)
 - `GET /api/public/profiles/:slug` → perfil completo + bloques + tema, o `{inactive: true}`
 - `POST /api/public/profiles/:slug/events` (`{type: VIEW|BLOCK_CLICK, block_id?, ...client hints}`)
 
-## 8. Generador de QR — escaneabilidad garantizada
+## 8. QR
 
-- Nivel de corrección de error mínimo `M`; se fuerza `Q` o `H` automáticamente cuando el usuario agrega un logo central (el logo puede tapar hasta ~30% con H).
-- Quiet zone: siempre se reserva el margen mínimo de 4 módulos alrededor del código, no configurable por el usuario (se documenta como restricción, no como opción).
-- El backend calcula el contraste entre `foreground_color` y `background_color` (fórmula de luminancia relativa); si el contraste es insuficiente devuelve warning y sugiere no continuar, pero permite forzar la descarga (decisión informada del usuario, como pide el enunciado: "mostrando advertencias").
-- Export: `PNG` (raster con `image/png`) y `SVG` (paths generados en servidor) para impresión en alta resolución en tarjetas físicas.
+El perfil público vive en `PUBLIC_BASE_URL/p/:slug`, una URL permanente: cualquier QR que el negocio imprima (hecho con la herramienta que prefiera) sigue sirviendo aunque edite el contenido. La app solo genera un QR propio: el de la tarjeta de lealtad (`GET /api/me/loyalty/qr?format=png|svg`), liso, negro sobre blanco.
 
-## 9. Docker Compose
+## 9. Despliegue
 
-Servicios: `mysql`, `phpmyadmin`, `backend` (Go, expone 8080 internamente), `frontend` (build multi-stage, sirve estáticos vía su propio Nginx interno o copiado al Nginx principal), `nginx` (reverse proxy, único puerto expuesto 80/443).
+Un solo proceso: el binario sirve la API, la SPA (`FRONTEND_DIST_PATH`) y los uploads (`MEDIA_STORAGE_PATH`), y usa SQLite en `DB_PATH`. Escucha solo en `127.0.0.1:8090`; Caddy le pone el dominio y HTTPS. Archivos en `deploy/`: unidad systemd, bloque de Caddy, `deploy.sh` (compila en local y sube) y `backup.sh` (`linkmeqr -backup`, `VACUUM INTO`). Ver README § Despliegue.
 
-Nginx rutea:
-- `/` → estáticos del frontend
-- `/api/` → `backend:8080`
-- `/phpmyadmin/` → `phpmyadmin:80` (protegido, solo para admin de infraestructura, no para usuarios finales)
-
-Variables de entorno vía `.env` (no versionado) + `.env.example` documentado: credenciales MySQL, `JWT_SECRET`, `JWT_REFRESH_SECRET`, `FRONTEND_ORIGIN`, `PUBLIC_BASE_URL` (para que el QR siempre apunte a `PUBLIC_BASE_URL/p/:slug`).
-
-Volumen persistente `db_data` para MySQL; volumen `media_data` compartido por el backend para uploads.
+Variables de entorno vía `.env` (no versionado) + `.env.example` documentado: `DB_PATH`, `JWT_SECRET`, `FRONTEND_ORIGIN`, `PUBLIC_BASE_URL` (para que el QR siempre apunte a `PUBLIC_BASE_URL/p/:slug`), `FRONTEND_DIST_PATH`, `MEDIA_STORAGE_PATH`.
 
 ## 10. Fases de construcción incremental
 

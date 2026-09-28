@@ -1,13 +1,12 @@
 package handlers
 
 import (
-	"errors"
 	"net/http"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-sql-driver/mysql"
 
+	"linkmeqr/backend/internal/database"
 	"linkmeqr/backend/internal/middleware"
 	"linkmeqr/backend/internal/models"
 	"linkmeqr/backend/internal/repository"
@@ -62,8 +61,7 @@ func (h *ClientHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	user, err := h.clients.Create(r.Context(), req.Email, req.Password, req.FullName, req.Phone)
 	if err != nil {
-		var mysqlErr *mysql.MySQLError
-		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+		if database.IsUniqueViolation(err) {
 			utils.Error(w, http.StatusConflict, "email_taken", "A user with this email already exists.")
 			return
 		}

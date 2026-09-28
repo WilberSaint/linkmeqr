@@ -53,7 +53,7 @@ async function onSubmit() {
 
         <h1 class="text-2xl lg:text-3xl xl:text-4xl font-bold leading-tight mb-3">Todo tu negocio,<br />en un solo QR</h1>
         <p class="text-indigo-100 text-sm xl:text-base leading-relaxed">
-          Perfil, reseñas, lealtad y tarjetas para imprimir — todo lo que tu negocio necesita para convertir una
+          Perfil, reseñas y lealtad — todo lo que tu negocio necesita para convertir una
           mirada en un cliente.
         </p>
       </div>

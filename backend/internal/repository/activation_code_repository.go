@@ -55,7 +55,7 @@ func (r *ActivationCodeRepository) CreateBatch(ctx context.Context, codes []mode
 
 func (r *ActivationCodeRepository) GetByCodeForUpdate(ctx context.Context, tx *sqlx.Tx, code string) (*models.ActivationCode, error) {
 	var c models.ActivationCode
-	err := tx.GetContext(ctx, &c, `SELECT * FROM activation_codes WHERE code = ? FOR UPDATE`, code)
+	err := tx.GetContext(ctx, &c, `SELECT * FROM activation_codes WHERE code = ?`, code)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -77,7 +77,7 @@ func (r *ActivationCodeRepository) MarkUsedTx(ctx context.Context, tx *sqlx.Tx, 
 
 func (r *ActivationCodeRepository) Revoke(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx, `
-		UPDATE activation_codes SET status = 'REVOKED', revoked_at = NOW()
+		UPDATE activation_codes SET status = 'REVOKED', revoked_at = CURRENT_TIMESTAMP
 		WHERE id = ? AND status = 'UNUSED'`, id)
 	return err
 }

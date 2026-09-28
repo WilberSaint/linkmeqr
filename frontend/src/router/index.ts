@@ -57,7 +57,6 @@ const router = createRouter({
         { path: '', name: 'admin-dashboard', component: () => import('@/views/admin/DashboardView.vue') },
         { path: 'clients', name: 'admin-clients', component: () => import('@/views/admin/ClientsView.vue') },
         { path: 'clients/:id', name: 'admin-client-detail', component: () => import('@/views/admin/ClientDetailView.vue') },
-        { path: 'clients/:id/print-cards', name: 'admin-print-cards', component: () => import('@/views/admin/PrintCardsView.vue') },
         { path: 'licenses', name: 'admin-licenses', component: () => import('@/views/admin/LicensesView.vue') },
         { path: 'templates', name: 'admin-templates', component: () => import('@/views/admin/TemplatesView.vue') },
         { path: 'audit-logs', name: 'admin-audit', component: () => import('@/views/admin/AuditLogsView.vue') },

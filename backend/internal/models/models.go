@@ -119,15 +119,15 @@ type Profile struct {
 }
 
 type ProfileTheme struct {
-	ID                  string    `db:"id" json:"id"`
-	ProfileID           string    `db:"profile_id" json:"profile_id"`
-	BackgroundType      string    `db:"background_type" json:"background_type"`
-	BackgroundValue     string    `db:"background_value" json:"background_value"`
-	BackgroundMediaID   *string   `db:"background_media_id" json:"background_media_id"`
+	ID                string  `db:"id" json:"id"`
+	ProfileID         string  `db:"profile_id" json:"profile_id"`
+	BackgroundType    string  `db:"background_type" json:"background_type"`
+	BackgroundValue   string  `db:"background_value" json:"background_value"`
+	BackgroundMediaID *string `db:"background_media_id" json:"background_media_id"`
 	// BackgroundFit only matters when BackgroundType is "image": "cover"
 	// fills edge to edge and crops, "contain" shows the whole image with
 	// BackgroundValue as letterbox fill, "repeat" tiles it at natural size.
-	BackgroundFit       string    `db:"background_fit" json:"background_fit"`
+	BackgroundFit string `db:"background_fit" json:"background_fit"`
 	// CardColor/CardOpacity style the translucent panel behind the header
 	// (logo, name, description, save-contact/share row) and text-heavy
 	// blocks (Google review, hours, testimonials) — the one thing standing
@@ -205,31 +205,11 @@ type Media struct {
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`
 }
 
-type QRCode struct {
-	ID                     string    `db:"id" json:"id"`
-	ProfileID              string    `db:"profile_id" json:"profile_id"`
-	ForegroundColor        string    `db:"foreground_color" json:"foreground_color"`
-	BackgroundColor        string    `db:"background_color" json:"background_color"`
-	ModuleStyle            string    `db:"module_style" json:"module_style"`
-	EyeStyle               string    `db:"eye_style" json:"eye_style"`
-	LogoMediaID            *string   `db:"logo_media_id" json:"logo_media_id"`
-	LogoStyle              string    `db:"logo_style" json:"logo_style"`
-	EyeColorFromLogo       bool      `db:"eye_color_from_logo" json:"eye_color_from_logo"`
-	PresetIcon             *string   `db:"preset_icon" json:"preset_icon"`
-	FrameShape             *string   `db:"frame_shape" json:"frame_shape"`
-	ShapeFill              bool      `db:"shape_fill" json:"shape_fill"`
-	ErrorCorrection        string    `db:"error_correction" json:"error_correction"`
-	HasScannabilityWarning bool      `db:"has_scannability_warning" json:"has_scannability_warning"`
-	CreatedAt              time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt              time.Time `db:"updated_at" json:"updated_at"`
-}
-
 type EventType string
 
 const (
 	EventView       EventType = "VIEW"
 	EventBlockClick EventType = "BLOCK_CLICK"
-	EventQRScan     EventType = "QR_SCAN"
 )
 
 type AnalyticsEvent struct {
@@ -237,8 +217,6 @@ type AnalyticsEvent struct {
 	ProfileID   string    `db:"profile_id" json:"profile_id"`
 	EventType   EventType `db:"event_type" json:"event_type"`
 	BlockID     *string   `db:"block_id" json:"block_id"`
-	PrintCardID *string   `db:"print_card_id" json:"print_card_id"`
-	QRSlot      *string   `db:"qr_slot" json:"qr_slot"`
 	DeviceType  *string   `db:"device_type" json:"device_type"`
 	OSName      *string   `db:"os_name" json:"os_name"`
 	BrowserName *string   `db:"browser_name" json:"browser_name"`
@@ -294,107 +272,4 @@ type LoyaltyStamp struct {
 	Source            StampSource `db:"source" json:"source"`
 	CreatedByAdminID  *string     `db:"created_by_admin_id" json:"created_by_admin_id"`
 	CreatedAt         time.Time   `db:"created_at" json:"created_at"`
-}
-
-// PrintCardLayout enumerates the built-in printable card layouts.
-type PrintCardLayout string
-
-const (
-	PrintCardGoogleReview PrintCardLayout = "google_review"
-	PrintCardSocialFollow PrintCardLayout = "social_follow"
-	PrintCardMenuScan     PrintCardLayout = "menu_scan"
-	PrintCardLoyaltyCard  PrintCardLayout = "loyalty_card"
-	PrintCardMultiQR      PrintCardLayout = "multi_qr"
-	PrintCardThankYou     PrintCardLayout = "thank_you"
-)
-
-// QRTargetType enumerates what URL a print card's QR (or, for multi_qr,
-// each of its two QRs) encodes.
-type QRTargetType string
-
-const (
-	QRTargetProfile   QRTargetType = "profile"
-	QRTargetMenu      QRTargetType = "menu"
-	QRTargetLoyalty   QRTargetType = "loyalty"
-	QRTargetCustomURL QRTargetType = "custom_url"
-	// QRTargetBlock points at one specific profile block (its QRTargetValue
-	// is that block's id) — lets a card link straight to e.g. "the business's
-	// Instagram" instead of only the generic profile/menu/loyalty shortcuts.
-	QRTargetBlock QRTargetType = "block"
-)
-
-// PrintCardSizePreset enumerates the physical print sizes offered.
-type PrintCardSizePreset string
-
-const (
-	SizeBusinessCard  PrintCardSizePreset = "business_card"
-	SizeTableTent     PrintCardSizePreset = "table_tent"
-	SizeStickerSquare PrintCardSizePreset = "sticker_square"
-	SizeDoorHanger    PrintCardSizePreset = "door_hanger"
-	// SizeCustom pairs with PrintCard.CustomWidthCm/CustomHeightCm instead
-	// of a SizePresets lookup — the "editable size" escape hatch for
-	// whatever a specific print shop or client actually needs.
-	SizeCustom PrintCardSizePreset = "custom"
-)
-
-// PrintCardSaleStatus tracks a card through LinkMeQR Studio's own small
-// sales pipeline — it's not just a design tool, it's how admin keeps track
-// of what's been produced and handed over for each client.
-type PrintCardSaleStatus string
-
-const (
-	SaleStatusDraft     PrintCardSaleStatus = "draft"
-	SaleStatusPrinted   PrintCardSaleStatus = "printed"
-	SaleStatusDelivered PrintCardSaleStatus = "delivered"
-)
-
-// PrintCard is a saved, printable marketing card design. ColorOverrides and
-// Content are stored as raw JSON strings, same convention as
-// Template.DefaultTheme / ProfileBlock.Content elsewhere in this file — the
-// handler layer re-emits them as json.RawMessage so the frontend gets a
-// real parsed object instead of a JSON-encoded string.
-type PrintCard struct {
-	ID         string              `db:"id" json:"id"`
-	ScanCode   string              `db:"scan_code" json:"-"`
-	UserID     string              `db:"user_id" json:"user_id"`
-	LayoutKey  PrintCardLayout     `db:"layout_key" json:"layout_key"`
-	Title      *string             `db:"title" json:"title"`
-	SizePreset PrintCardSizePreset `db:"size_preset" json:"size_preset"`
-	// CustomWidthCm/CustomHeightCm only apply when SizePreset == SizeCustom
-	// — nil otherwise. See SizeCustom's own doc comment.
-	CustomWidthCm  *float64            `db:"custom_width_cm" json:"custom_width_cm"`
-	CustomHeightCm *float64            `db:"custom_height_cm" json:"custom_height_cm"`
-	QRTargetType   QRTargetType        `db:"qr_target_type" json:"qr_target_type"`
-	QRTargetValue  *string             `db:"qr_target_value" json:"qr_target_value"`
-	ColorOverrides *string             `db:"color_overrides" json:"color_overrides"`
-	Content        string              `db:"content" json:"content"`
-	Status         PrintCardSaleStatus `db:"status" json:"status"`
-	SaleNote       *string             `db:"sale_note" json:"sale_note"`
-
-	// Layout is the card's element tree (a JSON-encoded CardLayout) and is
-	// authoritative for both editing and export whenever it is set.
-	// LayoutKey/Content/ColorOverrides above are the pre-tree model, kept
-	// only so a card that has not been migrated yet can still be seeded;
-	// nothing renders from them once Layout exists.
-	Layout *string `db:"layout" json:"-"`
-	// LayoutVersion is this card's own revision counter, incremented on
-	// every layout save and matching a row in print_card_layout_versions.
-	// Unrelated to models.CardLayoutVersion, which versions the schema.
-	LayoutVersion int `db:"layout_version" json:"layout_version"`
-
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
-}
-
-// PrintCardLayoutRevision is one saved revision of a card's element tree.
-// Every layout save appends one, so a design can be rolled back after a bad
-// edit — the printed artifact is the product being sold here, so losing a
-// finished design to one stray drag is a real cost.
-type PrintCardLayoutRevision struct {
-	ID          string    `db:"id" json:"id"`
-	PrintCardID string    `db:"print_card_id" json:"print_card_id"`
-	Version     int       `db:"version" json:"version"`
-	Layout      string    `db:"layout" json:"-"`
-	CreatedBy   *string   `db:"created_by" json:"created_by"`
-	CreatedAt   time.Time `db:"created_at" json:"created_at"`
 }

@@ -6,6 +6,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"path/filepath"
 
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
@@ -20,17 +21,26 @@ import (
 func main() {
 	_ = godotenv.Load()          // backend/.env, if running from backend/
 	_ = godotenv.Load("../.env") // repo-root .env, if running from backend/
+	if exe, err := os.Executable(); err == nil {
+		_ = godotenv.Load(filepath.Join(filepath.Dir(exe), ".env")) // beside the binary (server)
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
 
-	db, err := database.Connect(cfg.MySQLDSN())
+	db, err := database.Connect(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("database error: %v", err)
 	}
 	defer db.Close()
+
+	// So seeding works against a brand-new database file, before the API
+	// has ever started. A no-op when the schema is already current.
+	if err := database.Migrate(db); err != nil {
+		log.Fatalf("migration error: %v", err)
+	}
 
 	ctx := context.Background()
 	users := repository.NewUserRepository(db)

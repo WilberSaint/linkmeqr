@@ -7,6 +7,8 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -81,6 +83,7 @@ type ShellHandler struct {
 	profiles *services.ProfileService
 	licenses *repository.LicenseRepository
 	media    *repository.MediaRepository
+	distPath string
 	shellURL string
 	baseURL  string
 	client   *http.Client
@@ -91,12 +94,13 @@ func NewShellHandler(
 	profiles *services.ProfileService,
 	licenses *repository.LicenseRepository,
 	media *repository.MediaRepository,
-	shellURL, baseURL string,
+	distPath, shellURL, baseURL string,
 ) *ShellHandler {
 	return &ShellHandler{
 		profiles: profiles,
 		licenses: licenses,
 		media:    media,
+		distPath: distPath,
 		shellURL: shellURL,
 		baseURL:  strings.TrimSuffix(baseURL, "/"),
 		client:   &http.Client{Timeout: 5 * time.Second},
@@ -112,21 +116,7 @@ func (h *ShellHandler) fetchShell(ctx context.Context) (string, error) {
 		return "", errors.New("shell unavailable, retry throttled")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.shellURL, nil)
-	if err != nil {
-		return "", err
-	}
-	resp, err := h.client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("shell returned %d", resp.StatusCode)
-	}
-	// 2 MB is far more than an index.html shell ever is; the cap just keeps
-	// a misconfigured shellURL from reading something unbounded.
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	body, err := h.readShell(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -136,6 +126,30 @@ func (h *ShellHandler) fetchShell(ctx context.Context) (string, error) {
 	}
 	h.cache.set(doc)
 	return doc, nil
+}
+
+// readShell loads the SPA's index.html: straight off disk when this process
+// serves the built frontend itself, otherwise over HTTP (the Vite dev server).
+func (h *ShellHandler) readShell(ctx context.Context) ([]byte, error) {
+	if h.distPath != "" {
+		return os.ReadFile(filepath.Join(h.distPath, "index.html"))
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, h.shellURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("shell returned %d", resp.StatusCode)
+	}
+	// 2 MB is far more than an index.html shell ever is; the cap just keeps
+	// a misconfigured shellURL from reading something unbounded.
+	return io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 }
 
 // absoluteMediaURL turns a stored /media/... path into the absolute URL a

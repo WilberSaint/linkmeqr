@@ -2,12 +2,11 @@ package handlers
 
 import (
 	"encoding/json"
-	"errors"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-sql-driver/mysql"
 
+	"linkmeqr/backend/internal/database"
 	"linkmeqr/backend/internal/middleware"
 	"linkmeqr/backend/internal/models"
 	"linkmeqr/backend/internal/services"
@@ -107,8 +106,7 @@ func (h *TemplateHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	t, err := h.templates.Create(r.Context(), req.Slug, req.Name, req.Description, string(req.DefaultTheme), req.SortOrder)
 	if err != nil {
-		var mysqlErr *mysql.MySQLError
-		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+		if database.IsUniqueViolation(err) {
 			utils.Error(w, http.StatusConflict, "slug_taken", "A template with this slug already exists.")
 			return
 		}
@@ -145,8 +143,7 @@ func (h *TemplateHandler) Update(w http.ResponseWriter, r *http.Request) {
 	t.SortOrder = req.SortOrder
 
 	if err := h.templates.Update(r.Context(), t); err != nil {
-		var mysqlErr *mysql.MySQLError
-		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
+		if database.IsUniqueViolation(err) {
 			utils.Error(w, http.StatusConflict, "slug_taken", "A template with this slug already exists.")
 			return
 		}

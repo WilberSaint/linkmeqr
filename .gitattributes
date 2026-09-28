@@ -1,0 +1,5 @@
+# Scripts and configs that run on the Linux server: always LF, even on a
+# Windows checkout with core.autocrlf (bash chokes on ).
+*.sh text eol=lf
+deploy/linkmeqr.service text eol=lf
+deploy/Caddyfile.snippet text eol=lf

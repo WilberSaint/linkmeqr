@@ -148,8 +148,8 @@ func (s *LicenseService) GenerateBatch(ctx context.Context, adminID string, dura
 //   - if the client's license is still active, the new duration is appended
 //     to the existing expiration date instead of replacing it.
 //
-// Runs inside a single transaction with SELECT ... FOR UPDATE on both the
-// code and the license row to make concurrent activation attempts safe.
+// Runs inside a single transaction, which holds SQLite's write lock from
+// the start (BEGIN IMMEDIATE), to make concurrent activation attempts safe.
 func (s *LicenseService) ActivateCode(ctx context.Context, userID, code string) (*models.License, error) {
 	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {

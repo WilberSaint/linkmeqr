@@ -8,6 +8,10 @@ backend/media/
 backend/*.exe
 backend/*.test
 backend/tmp/
+backend/data/
+
+# --- Deploy ---
+deploy/.build/
 
 # --- Frontend (Node/Vite) ---
 frontend/node_modules/

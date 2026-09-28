@@ -1,0 +1,48 @@
+# /etc/systemd/system/linkmeqr.service
+#
+# LinkMeQR: one Go binary that serves the API, the built frontend (dist/) and
+# uploaded media, backed by a single SQLite file. Caddy sits in front of it
+# for the domain and HTTPS (see Caddyfile.snippet).
+#
+# Layout under /opt/linkmeqr:
+#   linkmeqr        the API binary
+#   seed            creates the first admin + default templates
+#   dist/           built frontend
+#   data/           SQLite database (linkmeqr.db + -wal/-shm while running)
+#   media/          uploaded images
+#   backups/        nightly database copies (deploy/backup.sh)
+#   .env            configuration (see .env.example)
+
+[Unit]
+Description=LinkMeQR
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=wilber
+Group=wilber
+WorkingDirectory=/opt/linkmeqr
+EnvironmentFile=/opt/linkmeqr/.env
+ExecStart=/opt/linkmeqr/linkmeqr
+
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=linkmeqr
+
+# Soft heap target for the Go runtime: it collects harder near this instead
+# of growing, keeping the footprint small next to the other apps.
+Environment=GOMEMLIMIT=120MiB
+
+# Keep it light and contained: the process only needs to write its own data.
+MemoryMax=256M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/linkmeqr/data /opt/linkmeqr/media
+
+[Install]
+WantedBy=multi-user.target
